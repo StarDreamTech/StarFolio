@@ -47,7 +47,7 @@ jobs:
       - run: npm ci
       - name: Prepare Android environment
         run: |
-          sdkmanager 'ndk;27.2.12479018' 'platforms;android-36' 'build-tools;36.0.0'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018' 'platforms;android-36' 'build-tools;36.0.0'
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - run: npm run tauri -- android init --ci --skip-targets-install
       - run: npm run tauri -- android build --ci --debug --target aarch64 --apk
