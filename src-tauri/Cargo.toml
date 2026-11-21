@@ -1,6 +1,6 @@
 [package]
 name = "starfolio"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.90"
 default-run = "starfolio"
@@ -18,7 +18,7 @@ required-features = ["app"]
 
 [features]
 default = ["app"]
-app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener"]
+app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:arboard", "dep:jni", "dep:objc2-ui-kit", "dep:objc2-foundation", "dep:objc2"]
 custom-protocol = ["app", "tauri/custom-protocol"]
 
 [dependencies]
@@ -36,6 +36,17 @@ ureq = { version = "2.12", default-features = false, features = ["tls", "gzip"] 
 url = "2"
 tauri = { version = "2", optional = true , features = [] }
 tauri-plugin-opener = { version = "2", optional = true }
+
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"], optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21", optional = true }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSString"], optional = true }
+objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "UIPasteboard"], optional = true }
 
 [build-dependencies]
 tauri-build = { version = "2", optional = true , features = [] }

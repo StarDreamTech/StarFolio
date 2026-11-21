@@ -1,5 +1,5 @@
 {
-  "name":"starfolio","version":"0.2.0","private":true,
-  "scripts":{"tauri":"tauri","test":"node tests/filters.cjs && cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --locked"},
+  "name":"starfolio","version":"0.2.1","private":true,
+  "scripts":{"tauri":"tauri","test":"node tests/filters.cjs && node tests/copy.cjs && cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --locked"},
   "devDependencies":{"@tauri-apps/cli":"2.12.4"}
 }

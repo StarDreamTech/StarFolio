@@ -1,8 +1,12 @@
 pub mod ai;
 mod collection;
+#[cfg(any(feature = "app", test))]
+mod copy;
 pub use collection::import_collection;
 #[cfg(feature = "app")]
 mod app;
+#[cfg(feature = "app")]
+mod clipboard;
 mod discussion;
 mod extract;
 mod network;
@@ -499,7 +503,7 @@ fn article(c: &Capture) -> String {
 fn standalone(c: &Capture) -> String {
     format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'self' file:; img-src 'self' file:; form-action 'none'; base-uri 'none'\"><title>{}</title><link rel=\"stylesheet\" href=\"../../styles-private/reader.css\"><link rel=\"stylesheet\" href=\"../../styles-private/{}\"><main>{}</main></html>",esc(&c.summary.title),site_css(&c.summary.site),article(c))
 }
-#[cfg(feature = "app")]
+#[cfg(any(feature = "app", test))]
 pub(crate) fn snapshot(root: &Path, id: &str) -> Result<Capture> {
     Ok(serde_json::from_slice(&fs::read(
         folder(root, id)?.join("manifest.json"),

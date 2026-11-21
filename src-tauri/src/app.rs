@@ -86,20 +86,29 @@ fn style(h: AppHandle, id: String, css: String) -> Result<(), String> {
 async fn image(h: AppHandle, id: String, name: String) -> Result<String, String> {
     let r = root(&h).map_err(msg)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let (dir, ext) = name.split_once('.').context("无效的图片名")?;
-        ensure!(
-            key(dir) && matches!(ext, "png" | "jpg" | "webp" | "gif" | "avif"),
-            "无效的图片名"
-        );
-        let path = folder(&r, &id)?.join("images").join(&name);
-        ensure!(fs::metadata(&path)?.len() <= 12 << 20, "图片过大");
-        let b = fs::read(path)?;
-        ensure!(raster(&b) == Some(ext), "无效的格式");
-        Ok(format!(
-            "data:image/{};base64,{}",
-            if ext == "jpg" { "jpeg" } else { ext },
-            STANDARD.encode(b)
-        ))
+        let (mime, b) = copy::image_bytes(&folder(&r, &id)?, &name)?;
+        Ok(format!("data:image/{mime};base64,{}", STANDARD.encode(b)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(msg)
+}
+#[tauri::command]
+async fn copy_article(
+    h: AppHandle,
+    window: tauri::WebviewWindow,
+    id: String,
+    replies: bool,
+) -> Result<(usize, usize), String> {
+    if window.label() != "main" {
+        return Err("只能从阅读页复制".into());
+    }
+    let root = root(&h).map_err(msg)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let clip = copy::prepare(&root, &id, replies)?;
+        let counts = (clip.images, clip.missing);
+        clipboard::write(&window, clip)?;
+        Ok(counts)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -122,6 +131,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             catalog,
             categorize,
+            copy_article,
             review_again,
             save,
             read,

@@ -60,3 +60,9 @@ Combine category, domain, AI tag and text filters; **Untagged** includes older s
 Import legacy X v3 JSON from the shelf. A translated main post is rejected; translated replies explicitly marked in historical files are retained with a notice. `tools/x-bookmark.html` can export originals and replies you explicitly record while reading a public thread. No automatic paging, login handling, nested-reply expansion or video extraction; stop at a challenge. Status IDs, attribution and links, reply type, available timestamps, media and historical metrics are retained when the source contains them.
 
 `folio import-collection <directory>` checks the catalog's record and local image hashes, never downloads missing images, and can resume without duplicating unchanged records. Set `STARFOLIO_LIBRARY` for an isolated CLI shelf. The GUI always uses its private data directory; there is no automatic GitHub publishing or sync.
+
+### Copy text and pictures (0.2.1)
+
+Open an archive and choose **复制图文** (Copy text and pictures), then paste into an editor. By default this copies the title, main text and its saved pictures in order. Check **含评论** to include replies, their authors and pictures. No scrolling or network access is needed. Missing images are marked. Plain-text fields receive text with image descriptions; some rich-text editors may also strip images.
+
+Only an explicit copy writes to the system clipboard. StarFolio never reads it; OS clipboard history or cross-device sync may retain a copy. A single copy is limited to 64 MiB, with a lower system clipboard limit on Android. Oversized copies show an error rather than silently dropping images.
