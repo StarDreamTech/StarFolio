@@ -1,0 +1,7 @@
+// Test the same DOM-wired controls loaded by Tauri, without a network or model.
+const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
+class Element{value='';children=[];get childElementCount(){return this.children.length}get options(){return this.children}replaceChildren(...v){this.children=v;this.value=''}append(...v){this.children.push(...v)}add(v){this.append(v)}}
+const els=new Map(),el=id=>{if(!els.has(id))els.set(id,new Element());return els.get(id)};
+const rows=[['X','x.com','社交帖子',['科学']],['Paper','else.example','随笔',['科学','艺术']],['Older','x.com','随笔',[]]].map(([title,site,category,tags],id)=>({title,site,category,tags,id,saved:'2025-01-01'}));
+vm.runInNewContext(fs.readFileSync('ui/app.js','utf8'),{document:{getElementById:el,createElement:()=>new Element()},Option:class{constructor(text,value){this.text=text;this.value=value}},window:{__TAURI__:{core:{invoke:async()=>['library',rows]}}},clearTimeout,setTimeout});
+setImmediate(()=>{const count=n=>assert.equal(el('items').childElementCount,n);count(3);el('site').value='x.com';el('site').onchange();count(2);el('tag').value='科学';el('tag').onchange();count(1);el('category').value='随笔';el('category').onchange();count(0);el('tag').value='__untagged';el('tag').onchange();count(1);el('find').value='No match';el('find').oninput();count(0);el('clearFilters').onclick();count(3);console.log('Shelf controls: combined facets, untagged, empty, search and reset OK')});

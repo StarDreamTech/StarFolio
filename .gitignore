@@ -1,0 +1,20 @@
+/target/
+**/target/
+/node_modules/
+/src-tauri/gen/schemas/
+# Real captures are always outside the source tree; defensive ignores for accidental copies.
+**/library/
+**/snapshots/
+**/assets-cache/
+**/styles-private/
+**/manifest.json
+**/*.har
+**/.env*
+.DS_Store
+**/imports/
+**/starfolio-private*.json
+xcuserdata/
+
+**/__pycache__/
+**/avatars/
+**/x-avatar-retry.json
