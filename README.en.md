@@ -55,7 +55,7 @@ On Android, run `npm run tauri -- android init`, then `npm run tauri -- android 
 
 ## Organizing and migrating archives (0.2)
 
-Combine category, domain, AI tag and text filters; **Untagged** includes older snapshots. Use the reader's category editor to set a personal category, or clear it to restore the source category. The local model suggests up to five topic tags from the title and a main-text excerpt during capture. A missing model or invalid output never invents tags or clears previously assigned tags. Review again to retry without visiting the site.
+Combine category, domain, author, AI tag and text filters; **Untagged** includes older snapshots. Authors are ranked by the number of main posts under the current filters, excluding replies. Changing the domain clears the author selection. Use the reader's category editor to set a personal category, or clear it to restore the source category. The local model suggests up to five topic tags from the title and a main-text excerpt during capture. A missing model or invalid output never invents tags or clears previously assigned tags. Review again to retry without visiting the site.
 
 Import legacy X v3 JSON from the shelf. A translated main post is rejected; translated replies explicitly marked in historical files are retained with a notice. `tools/x-bookmark.html` can export originals and replies you explicitly record while reading a public thread. No automatic paging, login handling, nested-reply expansion or video extraction; stop at a challenge. Status IDs, attribution and links, reply type, available timestamps, media and historical metrics are retained when the source contains them.
 

@@ -50,6 +50,39 @@ pub struct Entry {
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub source_fields: serde_json::Map<String, serde_json::Value>,
 }
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShelfAuthor {
+    key: String,
+    label: String,
+}
+fn shelf_author(site: &str, kind: &str, entries: &[Entry]) -> Option<ShelfAuthor> {
+    fn nonblank(s: &Option<String>) -> Option<&str> {
+        s.as_deref().map(str::trim).filter(|s| !s.is_empty())
+    }
+    let main = entries.iter().find(|e| e.number == 1)?;
+    let user = nonblank(&main.user);
+    let name = nonblank(&main.display).or(user)?;
+    let account = kind.starts_with("X ·") || kind.starts_with("Discourse");
+    let label = match user {
+        Some(u) if account && !name.eq_ignore_ascii_case(u.trim_start_matches('@')) => {
+            format!("{name} (@{})", u.trim_start_matches('@'))
+        }
+        Some(u) if account => format!("@{}", u.trim_start_matches('@')),
+        _ => name.to_owned(),
+    };
+    let identity = match (nonblank(&main.uid), user, nonblank(&main.profile)) {
+        (Some(uid), _, _) => format!("uid:{uid}"),
+        (_, Some(u), _) if account => {
+            format!("account:{}", u.trim_start_matches('@').to_ascii_lowercase())
+        }
+        (_, _, Some(p)) => format!("profile:{}", p.trim_end_matches('/')),
+        _ => format!("byline:{}", user.unwrap_or(name)),
+    };
+    Some(ShelfAuthor {
+        key: format!("{site}:{identity}"),
+        label,
+    })
+}
 #[derive(Serialize, Deserialize)]
 pub struct Summary {
     pub id: String,
@@ -66,6 +99,8 @@ pub struct Summary {
     pub ai_state: String,
     #[serde(default)]
     pub category: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<ShelfAuthor>,
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -385,6 +420,7 @@ fn make(
     let summary = Summary {
         id: id.clone(),
         title,
+        author: shelf_author(&site, kind, &entries),
         site,
         url: u.into(),
         saved: tin.to_rfc3339(),
@@ -456,11 +492,19 @@ pub fn list(root: &Path) -> Result<Vec<Summary>> {
     for d in dirs {
         let d = d?;
         if key(&d.file_name().to_string_lossy()) {
-            let mut s: Summary = serde_json::from_slice(&fs::read(d.path().join("summary.json"))?)?;
+            let dir = d.path();
+            let mut s: Summary = serde_json::from_slice(&fs::read(dir.join("summary.json"))?)?;
+            if s.author.is_none() {
+                // Older summaries omit authors. Read the saved main post without rewriting the archive.
+                s.author = fs::read(dir.join("manifest.json"))
+                    .ok()
+                    .and_then(|data| serde_json::from_slice::<Capture>(&data).ok())
+                    .and_then(|c| shelf_author(&s.site, &s.kind, &c.entries));
+            }
             if s.category.is_empty() {
                 s.category = category(&s.kind).into()
             }
-            if let Ok(override_name) = fs::read_to_string(d.path().join("category.txt")) {
+            if let Ok(override_name) = fs::read_to_string(dir.join("category.txt")) {
                 if !override_name.trim().is_empty() {
                     s.category = override_name;
                 }
@@ -713,6 +757,36 @@ mod tests {
         b["posts"] = serde_json::json!([p.clone(), p]);
         assert!(import(d.path(), sample().as_str(), &b.to_string()).is_err());
         assert_eq!(list(d.path()).unwrap().len(), 1);
+    }
+    #[test]
+    fn shelf_author_recovers_legacy_main_post_without_rewriting() {
+        let d = tempfile::tempdir().unwrap();
+        let data = serde_json::json!({
+            "format": "starfolio.discourse-dom.v1", "url": sample().as_str(), "title": "Example",
+            "expected": 2, "posts": [
+                {"id": 12, "post_number": 2, "username": "reply", "user_id": 4, "created_at": "2025-01-01Z", "cooked": "<p>Reply</p>"},
+                {"id": 11, "post_number": 1, "username": "first", "name": "Writer", "user_id": 3, "created_at": "2025-01-01Z", "cooked": "<p>Main</p>"},
+            ]
+        });
+        let s = import(d.path(), sample().as_str(), &data.to_string()).unwrap();
+        let dir = folder(d.path(), &s.id).unwrap();
+        let path = dir.join("summary.json");
+        assert_eq!(s.author.as_ref().unwrap().key, "forum.example.org:uid:3");
+        assert_eq!(s.author.as_ref().unwrap().label, "Writer (@first)");
+        let mut legacy = serde_json::to_value(&s).unwrap();
+        legacy.as_object_mut().unwrap().remove("author");
+        let legacy = serde_json::to_vec(&legacy).unwrap();
+        fs::write(&path, &legacy).unwrap();
+        let manifest = fs::read(dir.join("manifest.json")).unwrap();
+        assert_eq!(list(d.path()).unwrap()[0].author, s.author);
+        assert_eq!(fs::read(path).unwrap(), legacy);
+        assert_eq!(fs::read(dir.join("manifest.json")).unwrap(), manifest);
+        let mut c: Capture = serde_json::from_slice(&manifest).unwrap();
+        c.entries.swap(0, 1);
+        assert_eq!(shelf_author(&s.site, &s.kind, &c.entries), s.author);
+        c.entries[1].user = None;
+        c.entries[1].display = None;
+        assert_eq!(shelf_author(&s.site, &s.kind, &c.entries), None);
     }
     #[test]
     fn valid_topics() {
