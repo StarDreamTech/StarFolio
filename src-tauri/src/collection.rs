@@ -42,16 +42,27 @@ impl Cache<'_> {
         let mut images = std::collections::BTreeSet::<String>::new();
         if v["source"] == "x" {
             for row in std::iter::once(v).chain(v["comments"].as_array().into_iter().flatten()) {
+                if let Some(url) = row["coverUrl"].as_str() {
+                    images.insert(url.into());
+                }
                 for i in row["images"].as_array().into_iter().flatten() {
                     images.insert(text(i, "url").into());
                 }
             }
         } else {
-            let h = scraper::Html::parse_fragment(text(v, "html"));
-            for e in h.select(&scraper::Selector::parse("img").unwrap()) {
-                for k in ["src", "data-original", "data-src", "data-lazy-src"] {
-                    if let Some(x) = e.value().attr(k) {
-                        images.insert(x.into());
+            let sel = scraper::Selector::parse("img").unwrap();
+            for row in v["posts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .chain(std::iter::once(v))
+            {
+                let h = scraper::Html::parse_fragment(text(row, "html"));
+                for e in h.select(&sel) {
+                    for k in ["src", "data-original", "data-src", "data-lazy-src"] {
+                        if let Some(x) = e.value().attr(k) {
+                            images.insert(x.into());
+                        }
                     }
                 }
             }
@@ -109,7 +120,10 @@ pub fn import_collection(root: &Path, src: &Path) -> Result<usize> {
         let meta: Value = serde_json::from_slice(&b)?;
         ensure!(
             meta.get("source") == Some(&Value::from("x"))
-                || meta.get("format") == Some(&Value::from("starfolio.article.v1")),
+                || matches!(
+                    meta["format"].as_str(),
+                    Some("starfolio.article.v1" | "starfolio.v2ex.v1")
+                ),
             "不支持的归档记录"
         );
         let summary = make(root, &r.url, Some(std::str::from_utf8(&b)?), Some(&cache))
@@ -173,7 +187,14 @@ pub(crate) fn x_post(
         }
         let author = &p["author"];
         let handle = text(author, "handle");
-        let mut html = format!("<p>{}</p>", esc(text(p, "text")).replace('\n', "<br>"));
+        let long = entries.is_empty()
+            && p["format"] == "article"
+            && !text(p, "articleHtml").trim().is_empty();
+        let mut html = if long {
+            text(p, "articleHtml").to_owned()
+        } else {
+            format!("<p>{}</p>", esc(text(p, "text")).replace('\n', "<br>"))
+        };
         if p["translated"] == true {
             html = "<p><em>原备份标记：这条回复为平台译文，不是原文。</em></p>".to_string() + &html;
         }
@@ -210,7 +231,44 @@ pub(crate) fn x_post(
                 ),
             );
         }
-        for link in p["links"].as_array().into_iter().flatten() {
+        if long {
+            fields.insert("format".into(), Value::String("article".into()));
+            if let Ok(url) = crate::local_media::x_media_url(text(p, "coverUrl")) {
+                fields.insert("coverUrl".into(), Value::String(url.to_string()));
+                html = format!(
+                    "<img src=\"{}\" alt=\"{}\">",
+                    esc(url.as_str()),
+                    crate::local_media::COVER_ALT
+                ) + &html;
+            }
+        }
+        if let Some(quote) = Url::parse(text(p, "quoteUrl")).ok().filter(|q| {
+            q.scheme() == "https"
+                && matches!(q.host_str(), Some("x.com" | "twitter.com"))
+                && q.query().is_none()
+                && q.fragment().is_none()
+                && q.username().is_empty()
+                && q.password().is_none()
+                && q.port().is_none()
+                && q.path_segments().is_some_and(|mut seg| {
+                    seg.next().is_some_and(|h| {
+                        !h.is_empty() && h.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                    }) && seg.next() == Some("status")
+                        && seg
+                            .next()
+                            .is_some_and(|part| part.parse::<i64>().is_ok_and(|n| n > 0 && n != id))
+                        && seg.next().is_none()
+                })
+        }) {
+            fields.insert("quoteUrl".into(), Value::String(quote.to_string()));
+            html += &format!("<p><a href=\"{}\">引用原帖</a></p>", esc(quote.as_str()));
+        }
+        for link in p["links"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|_| !long)
+        {
             if let Some(l) = network::link(&u, text(link, "url")) {
                 html += &format!(
                     "<p><a href=\"{}\">{}</a></p>",
@@ -219,7 +277,12 @@ pub(crate) fn x_post(
                 )
             }
         }
-        for im in p["images"].as_array().into_iter().flatten() {
+        for im in p["images"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|_| !long)
+        {
             if let Some(l) = network::link(&u, text(im, "url")) {
                 html += &format!(
                     "<img src=\"{}\" alt=\"{}\">",
@@ -249,7 +312,15 @@ pub(crate) fn x_post(
             ..Default::default()
         });
     }
-    let title = text(v, "text")
+    let heading = text(
+        v,
+        if v["format"] == "article" && !text(v, "title").is_empty() {
+            "title"
+        } else {
+            "text"
+        },
+    );
+    let title = heading
         .lines()
         .find(|x| !x.trim().is_empty())
         .unwrap_or("X 帖子")
@@ -258,6 +329,86 @@ pub(crate) fn x_post(
         .collect();
     Ok((title, entries))
 }
+pub(crate) fn v2ex(
+    v: &Value,
+    u: &Url,
+    image: &mut extract::ImageFn,
+) -> Result<(String, Vec<Entry>, usize)> {
+    let topic = discussion::topic_id(u).context("不是 V2EX 主题链接")?;
+    let title = text(v, "title").trim();
+    let rows = v["posts"].as_array().context("缺少楼层")?;
+    ensure!(
+        matches!(u.host_str(), Some("www.v2ex.com" | "v2ex.com"))
+            && u.scheme() == "https"
+            && u.path() == format!("/t/{topic}")
+            && u.query().is_none()
+            && Url::parse(text(v, "url"))? == *u
+            && !title.is_empty()
+            && (1..=3000).contains(&rows.len()),
+        "V2EX 备份来源、标题或楼层无效"
+    );
+    let mut seen = std::collections::HashSet::new();
+    let mut floors = std::collections::HashSet::new();
+    let mut entries = Vec::with_capacity(rows.len());
+    for (i, row) in rows.iter().enumerate() {
+        let id = row["id"]
+            .as_i64()
+            .filter(|n| *n > 0)
+            .context("缺少有效的楼层 ID")?;
+        ensure!(
+            seen.insert(id) && (i > 0 || id == topic),
+            "V2EX 帖子 ID 冲突"
+        );
+        let floor = if i == 0 {
+            0
+        } else {
+            row["floor"]
+                .as_i64()
+                .filter(|n| (1..=100_000).contains(n) && floors.insert(*n))
+                .context("回复楼号无效或重复")?
+        };
+        let author = text(row, "author");
+        let mut url = u.clone();
+        if i > 0 {
+            url.set_fragment(Some(&format!("r_{id}")));
+        }
+        let profile = if !author.is_empty()
+            && author
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
+            u.join(&format!("/member/{author}")).ok().map(Into::into)
+        } else {
+            None
+        };
+        let html = extract::fragment(text(row, "html"), &url, image);
+        ensure!(!html.trim().is_empty(), "V2EX 楼层正文为空");
+        entries.push(Entry {
+            number: floor + 1,
+            post_id: Some(id),
+            user: (!author.is_empty()).then(|| author.into()),
+            profile,
+            date: row["createdAt"]
+                .as_str()
+                .filter(|t| chrono::DateTime::parse_from_rfc3339(t).is_ok())
+                .map(Into::into),
+            url: url.into(),
+            html,
+            ..Default::default()
+        });
+    }
+    let expected = v["expectedReplies"]
+        .as_u64()
+        .filter(|n| *n <= 100_000)
+        .unwrap_or((rows.len() - 1) as u64) as usize;
+    entries.sort_by_key(|e| e.number);
+    Ok((
+        title.into(),
+        entries,
+        expected.saturating_sub(rows.len() - 1),
+    ))
+}
+
 pub(crate) fn blog(
     v: &Value,
     u: &Url,
@@ -325,6 +476,25 @@ mod tests {
         c["records"][0]["path"] = json!("../x.json");
         write(&c);
         assert!(import_collection(lib.path(), src).is_err());
+    }
+    #[test]
+    fn v2ex_browser_import_keeps_reply_source_and_missing_count() {
+        let u = Url::parse("https://www.v2ex.com/t/123").unwrap();
+        let v = json!({"url":u.as_str(),"title":"Topic","expectedReplies":2,"posts":[
+            {"id":123,"author":"alice","html":"<p>Main</p>"},
+            {"id":876,"floor":2,"author":"bob","html":"<p>Reply</p>","createdAt":"2026-11-20T16:10:14+08:00"}
+        ]});
+        let (_, posts, gap) = v2ex(&v, &u, &mut |_| None).unwrap();
+        assert_eq!(gap, 1);
+        assert_eq!(posts[1].post_id, Some(876));
+        assert_eq!(posts[1].url, "https://www.v2ex.com/t/123#r_876");
+        assert_eq!(posts[1].date.as_deref(), Some("2026-11-20T16:10:14+08:00"));
+        assert!(v2ex(
+            &v,
+            &Url::parse("https://www.v2ex.com/t/124").unwrap(),
+            &mut |_| None
+        )
+        .is_err());
     }
     #[test]
     fn legacy_category_and_blog_category() {

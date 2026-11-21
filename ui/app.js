@@ -51,7 +51,7 @@ $('saveZone').onclick=()=>{
 };
 const facets=['category','site','tag'];
 function facetOptions(){for(const [i,k] of facets.entries()){const el=$(k),old=el.value;const values=[...new Set(catalog.flatMap(x=>k==='tag'?(x.tags||[]):[x[k]]).filter(Boolean))].sort((a,b)=>a.localeCompare(b));el.replaceChildren(new Option(['全部分类','全部域名','全部标签'][i],''));if(k==='tag')el.add(new Option('暂无 AI 标签','__untagged'));for(const v of values)el.add(new Option(v,v));if([...el.options].some(o=>o.value===old))el.value=old}}
-function matches(s,q,c,d,t){const tags=s.tags||[];return (!c||c===s.category)&&(!d||d===s.site)&&(!t||(t==='__untagged'?!tags.length:tags.includes(t)))&&[s.title,s.author?.label,s.site,s.category,...tags].join(' ').toLocaleLowerCase().includes(q.trim().toLocaleLowerCase())}
+function matches(s,q,c,d,t){const tags=s.tags||[];return (!c||c===s.category)&&(!d||d===s.site)&&(!t||(t==='__untagged'?!tags.length:tags.includes(t)))&&[s.title,s.author?.label,s.site,s.category,s.image_text,...tags].join(' ').toLocaleLowerCase().includes(q.trim().toLocaleLowerCase())}
 const authorKey=s=>s.author?.key||'__unknown_author';
 function authorOptions(rows){
   const el=$('author'),old=el.value,counts=new Map();

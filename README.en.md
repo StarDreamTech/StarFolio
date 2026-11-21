@@ -77,3 +77,12 @@ Only an explicit copy writes to the system clipboard. StarFolio never reads it; 
 Posts and replies can show local author portraits from X, Discourse or explicitly marked HTML bylines. Ambiguous identities and missing portraits stay blank. Repeated authors reuse their records, identical image bytes share one file, and the observation date does not claim the photo was current when the post was written. Byline portraits are excluded from **Copy text & images**.
 
 Use `folio import-avatars <avatar-directory>` to enrich an existing shelf offline without fetching articles or changing their body text or inline media. Rerunning skips existing data. For an authorized public X collection, `python3 tools/backfill-x-avatars.py <collection> <private-checkpoint-directory>` fetches missing public profile metadata and portraits only. It respects access blocks; keep checkpoints outside the public collection. Private-site portraits are never automatically published.
+
+
+### X articles, quoted posts, and image collections
+
+Open the original page in Ego Lite before capturing. The X bookmark distinguishes regular posts from articles: a verified cover goes first, while inline images stay in order. When image bytes are available from the browser, use `folio import-collection` for a fully offline import. Use `folio restore-x-cover <snapshot-id> <verified-cover-url> <local-image>` to fill a known missing cover without duplicating an existing capture.
+
+A verified quote permalink is stored as `quoteUrl` and appears as a source link in the reader. If the card has no visible permalink, open it normally and verify the author and destination before adding that field. Do not guess the link or treat the quoted text as a reply. V2EX captures can use a `starfolio.v2ex.v1` browser record for the topic, visible replies, and local images through collection import.
+
+For standalone images on macOS, run `swift tools/image-ocr.swift <image>` for on-device text recognition. Check the result and prepare JSON with `title`, `text`, `description`, and `tags`, optionally `source_url` for a known source, then run `folio import-image <image> <metadata-json>`. Use a separate visual description when the image has no legible text. The original image stays local and is deduplicated by content; the shelf searches the caption, recognized text, description, and tags. The importer does not call a remote OCR or tagging service.
