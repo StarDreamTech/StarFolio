@@ -1,0 +1,2 @@
+# Bookmarklets embed the literal UTF-8 source. Keep the evidence identical on Windows.
+/tools/*-export.js text eol=lf
