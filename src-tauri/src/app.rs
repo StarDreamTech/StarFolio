@@ -49,6 +49,7 @@ struct View {
     html: String,
     css: String,
     site_css: String,
+    source_url: String,
     audit: ai::Audit,
 }
 #[tauri::command]
@@ -63,6 +64,7 @@ async fn read(h: AppHandle, id: String) -> Result<View, String> {
                 .replace(" src=\"../../avatars/objects/", " data-avatar=\""),
             css: BASE_CSS.into(),
             site_css: css,
+            source_url: c.summary.url,
             audit: c.audit,
         })
     })

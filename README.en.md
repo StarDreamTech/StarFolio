@@ -55,6 +55,8 @@ On Android, run `npm run tauri -- android init`, then `npm run tauri -- android 
 
 ## Organizing and migrating archives (0.2)
 
+Use **打开原文** (Open original) in the reader toolbar to open the archived source in your default browser, even while reading replies. The button is hidden when there is no source URL. Offline reading never visits the source automatically.
+
 Combine category, domain, author, AI tag and text filters; **Untagged** includes older snapshots. Authors are ranked by the number of main posts under the current filters, excluding replies. Changing the domain clears the author selection. Use the reader's category editor to set a personal category, or clear it to restore the source category. The local model suggests up to five topic tags from the title and a main-text excerpt during capture. A missing model or invalid output never invents tags or clears previously assigned tags. Review again to retry without visiting the site.
 
 The shelf shows 20 entries per page, with page controls below the list. Changing a filter returns to page one; returning from the reader keeps the current page. Author counts cover all matching entries, not just the displayed page. See [pagination verification](docs/shelf-pagination.md).
