@@ -515,9 +515,18 @@ pub fn list(root: &Path) -> Result<Vec<Summary>> {
     r.sort_by(|a, b| b.saved.cmp(&a.saved));
     Ok(r)
 }
-fn article(c: &Capture) -> String {
+fn reader_time(raw: &str) -> String {
+    let raw = esc(raw);
+    format!("<time data-archive-time datetime=\"{raw}\">{raw}</time>")
+}
+fn article(c: &Capture, app_times: bool) -> String {
     let s = &c.summary;
-    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p><a href=\"{}\">原文</a> · {} 条正文与评论 · 存于 {}</p></header>",esc(&s.site),esc(&s.title),esc(&s.url),s.posts,esc(&s.saved));
+    let saved = if app_times {
+        format!("归档于 {}", reader_time(&s.saved))
+    } else {
+        format!("存于 {}", esc(&s.saved))
+    };
+    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p><a href=\"{}\">原文</a> · {} 条正文与评论 · {saved}</p></header>",esc(&s.site),esc(&s.title),esc(&s.url),s.posts);
     if s.missing_posts + s.missing_images > 0 {
         h += &format!(
             "<p class=\"missing\">未取到 {} 个楼层、{} 个图片来源。详见本地清单。</p>",
@@ -542,7 +551,11 @@ fn article(c: &Capture) -> String {
             h += &format!(" · ID {}", esc(v))
         }
         if let Some(v) = &e.date {
-            h += &format!(" · <time>{}</time>", esc(v))
+            if app_times {
+                h += &format!(" · 发布于 {}", reader_time(v));
+            } else {
+                h += &format!(" · <time>{}</time>", esc(v));
+            }
         }
         if let Some(n) = e.reply {
             h += &format!(" · 回复 <a href=\"#p{n}\">#{n}</a>")
@@ -552,7 +565,7 @@ fn article(c: &Capture) -> String {
     h
 }
 fn standalone(c: &Capture) -> String {
-    format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'self' file:; img-src 'self' file:; form-action 'none'; base-uri 'none'\"><title>{}</title><link rel=\"stylesheet\" href=\"../../styles-private/reader.css\"><link rel=\"stylesheet\" href=\"../../styles-private/{}\"><main>{}</main></html>",esc(&c.summary.title),site_css(&c.summary.site),article(c))
+    format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'self' file:; img-src 'self' file:; form-action 'none'; base-uri 'none'\"><title>{}</title><link rel=\"stylesheet\" href=\"../../styles-private/reader.css\"><link rel=\"stylesheet\" href=\"../../styles-private/{}\"><main>{}</main></html>",esc(&c.summary.title),site_css(&c.summary.site),article(c, false))
 }
 #[cfg(any(feature = "app", test))]
 pub(crate) fn snapshot(root: &Path, id: &str) -> Result<Capture> {
@@ -757,6 +770,34 @@ mod tests {
         b["posts"] = serde_json::json!([p.clone(), p]);
         assert!(import(d.path(), sample().as_str(), &b.to_string()).is_err());
         assert_eq!(list(d.path()).unwrap().len(), 1);
+    }
+    #[test]
+    fn timezone_markup_is_app_only_and_escapes_source_time() {
+        let d = tempfile::tempdir().unwrap();
+        let data = serde_json::json!({
+            "format": "starfolio.discourse-dom.v1", "url": sample().as_str(), "title": "Example",
+            "expected": 2, "posts": [
+                {"id": 11, "post_number": 1, "username": "alice", "user_id": 3, "created_at": "2025-02-04T02:22:11.123Z", "cooked": "<p>Main</p>"},
+                {"id": 12, "post_number": 2, "username": "reply", "user_id": 4, "created_at": "unknown\" <time>", "cooked": "<p>Reply</p>"},
+            ]
+        });
+        let s = import(d.path(), sample().as_str(), &data.to_string()).unwrap();
+        let c = snapshot(d.path(), &s.id).unwrap();
+        let html = article(&c, true);
+        assert_eq!(html.matches("data-archive-time").count(), 3);
+        assert!(html.contains(&format!(
+            "归档于 <time data-archive-time datetime=\"{}\"",
+            s.saved
+        )));
+        assert!(
+            html.contains("发布于 <time data-archive-time datetime=\"2025-02-04T02:22:11.123Z\">")
+        );
+        assert!(html.contains("datetime=\"unknown&quot; &lt;time&gt;\""));
+        let offline = standalone(&c);
+        assert!(!offline.contains("data-archive-time"));
+        assert!(offline.contains(&format!("存于 {}", s.saved)));
+        assert!(offline.contains(" · <time>2025-02-04T02:22:11.123Z</time>"));
+        assert_eq!(verify(d.path(), &s.id).unwrap(), 2);
     }
     #[test]
     fn shelf_author_recovers_legacy_main_post_without_rewriting() {
