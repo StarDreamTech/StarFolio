@@ -11,6 +11,8 @@ mod clipboard;
 mod discussion;
 mod extract;
 mod network;
+mod local_media;
+pub use local_media::{import_local_image, restore_x_cover, LocalImage};
 use anyhow::{bail, ensure, Context, Result};
 #[cfg(feature = "app")]
 pub use app::run;
@@ -103,6 +105,8 @@ pub struct Summary {
     pub author: Option<ShelfAuthor>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub image_text: String,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Asset {
@@ -282,7 +286,7 @@ fn make(
         .and_then(|d| {
             serde_json::from_str::<serde_json::Value>(d)
                 .ok()
-                .filter(|v| v["source"] == "x" || v["format"] == "starfolio.article.v1")
+                .filter(|v| v["source"] == "x" || matches!(v["format"].as_str(), Some("starfolio.article.v1" | "starfolio.v2ex.v1")))
                 .map(|v| {
                     digest(
                         format!(
@@ -337,7 +341,11 @@ fn make(
             let v: serde_json::Value = serde_json::from_str(data)?;
             if v["source"] == "x" {
                 let (t, e) = collection::x_post(&v, &u, &mut grab)?;
-                ("X · 可见讨论", t, e, vec![], None)
+                (if v["format"] == "article" { "X · 长文" } else { "X · 可见讨论" }, t, e, vec![], None)
+            } else if v["format"] == "starfolio.v2ex.v1" {
+                let (t, e, m) = collection::v2ex(&v, &u, &mut grab)?;
+                unknown_missing = m;
+                ("V2EX · 浏览器", t, e, vec![], None)
             } else if v["format"] == "starfolio.article.v1" {
                 let (t, e) = collection::blog(&v, &u, &mut grab)?;
                 imported_category = v["category"]
@@ -427,6 +435,7 @@ fn make(
         kind: kind.into(),
         category: imported_category.unwrap_or_else(|| category(kind).into()),
         tags,
+        image_text: String::new(),
         ai_state: audit.state.clone(),
         posts: entries.len(),
         missing_posts: missing.len() + unknown_missing,
@@ -526,7 +535,13 @@ fn article(c: &Capture, app_times: bool) -> String {
     } else {
         format!("存于 {}", esc(&s.saved))
     };
-    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p><a href=\"{}\">原文</a> · {} 条正文与评论 · {saved}</p></header>",esc(&s.site),esc(&s.title),esc(&s.url),s.posts);
+    let source = if s.url.is_empty() {
+        String::new()
+    } else {
+        format!("<a href=\"{}\">原文</a> · ", esc(&s.url))
+    };
+    let count = if s.kind == local_media::LOCAL_IMAGE { "图片收藏".into() } else { format!("{} 条正文与评论", s.posts) };
+    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p>{source}{count} · {saved}</p></header>",esc(&s.site),esc(&s.title));
     if s.missing_posts + s.missing_images > 0 {
         h += &format!(
             "<p class=\"missing\">未取到 {} 个楼层、{} 个图片来源。详见本地清单。</p>",
@@ -541,12 +556,12 @@ fn article(c: &Capture, app_times: bool) -> String {
             by
         };
         let face = e.avatar.as_ref().filter(|a| avatars::valid_name(&a.file)).map(|a|format!("<img class=\"author-avatar\" width=\"32\" height=\"32\" loading=\"lazy\" title=\"头像采集于 {}\" alt=\"\" src=\"../../avatars/objects/{}\"> ",esc(&a.observed),esc(&a.file))).unwrap_or_default();
-        h += &format!(
-            "<article class=\"post\" id=\"p{}\"><p class=\"meta\">{face}<a href=\"{}\">#{}</a> · {by}",
-            e.number,
-            esc(&e.url),
-            e.number
-        );
+        let post_link = if s.kind == local_media::LOCAL_IMAGE {
+            format!("#{}", e.number)
+        } else {
+            format!("<a href=\"{}\">#{}</a>", esc(&e.url), e.number)
+        };
+        h += &format!("<article class=\"post\" id=\"p{}\"><p class=\"meta\">{face}{post_link} · {by}", e.number);
         if let Some(v) = &e.uid {
             h += &format!(" · ID {}", esc(v))
         }
@@ -643,10 +658,12 @@ pub fn recheck(root: &Path, id: &str) -> Result<ai::Audit> {
     }
     audit.stages.push("integrity_verified".into());
     if let Some(m) = m {
-        match ai::tag(&m, &c.summary.title, &c.entries) {
-            Ok(tags) => c.summary.tags = tags,
-            Err(e) => audit.notes.push(format!("AI 标签未更新：{e}")),
-        };
+        if c.summary.kind != local_media::LOCAL_IMAGE {
+            match ai::tag(&m, &c.summary.title, &c.entries) {
+                Ok(tags) => c.summary.tags = tags,
+                Err(e) => audit.notes.push(format!("AI 标签未更新：{e}")),
+            }
+        }
         match ai::review(&m, &c.entries, &mut audit) {
             Ok(()) => audit.finish(),
             Err(e) => {

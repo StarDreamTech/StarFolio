@@ -32,6 +32,13 @@ function fixture(page) {
       this.textContent = ''; this.innerHTML = '';
       this.append(...children);
     }
+    cloneNode(deep) { const n = new Element(this.tagName, {...this.attrs}, ...(deep ? this.children.map(c=>c.cloneNode(true)) : [])); n.textContent=this.textContent; return n; }
+    get attributes() { return Object.keys(this.attrs).map(name=>({name})); }
+    get alt() { return this.attrs.alt||''; }
+    get innerHTML() { return this.textContent + this.children.map(c=>`<${c.tagName.toLowerCase()}${Object.entries(c.attrs).map(([k,v])=>` ${k}="${v}"`).join('')}>${c.innerHTML}</${c.tagName.toLowerCase()}>`).join(''); }
+    set innerHTML(_) {}
+    setAttribute(k,v) { this.attrs[k]=v; }
+    removeAttribute(k) { delete this.attrs[k]; }
     get id() { return this.attrs.id || ''; }
     set id(id) { this.attrs.id = id; }
     get href() { return this.attrs.href ? new URL(this.attrs.href, location).href : ''; }
@@ -99,6 +106,36 @@ function bookmark(htmlName, jsName) {
   assert.equal(json.author.avatarUrl, avatarUrl(1));
   assert.equal(json.author.handle, 'Alice');
   assert.deepEqual(json.comments.map(r => [r.id, r.author.avatarUrl]), [['3', undefined], ['2', avatarUrl(2)], ['4', undefined]]);
+}
+
+{
+  const { el, text, body, ctx } = fixture('https://x.com/Alice/status/1');
+  const dt = value => ({'data-testid':value});
+  const img = name => el('img', {src:`https://pbs.twimg.com/media/${name}?format=jpg`,srcset:'should-not-export',alt:name});
+  const media = name => el('div',dt('tweetPhoto'),img(name));
+  const cited = el('div',{role:'link'},el('a',{href:'/Cited/status/9?s=20'},el('time',{datetime:'2026-11-21'})),media('quote-photo'));
+  const rich = el('div',dt('twitterArticleRichTextView'),text('p',{},'before'),media('inline'),text('p',{},'after'));
+  const view = el('article',dt('twitterArticleReadView'),media('cover'),text('div',dt('twitter-article-title'),'Long original'),rich);
+  const main = el('article',dt('tweet'), el('a',{href:'/Alice/status/1'},el('time',{datetime:'2026-11-21'})),view,cited);
+  body.append(el('div',dt('primaryColumn'),main));
+  const record=()=>runInNewContext(bookmark('x-bookmark.html','x-export.js').replace('((captureOnly=false)=>{','((captureOnly=true)=>{'),ctx);
+  const first=record();
+  assert.equal(first.format,'article');
+  assert.equal(first.title,'Long original');
+  assert.match(first.coverUrl,/\/cover\?/);
+  assert.match(first.articleHtml,/before.*inline.*after/);
+  assert.doesNotMatch(first.articleHtml,/cover|srcset|quote-photo/);
+  assert.equal(first.images.length,1);
+  assert.equal(first.quoteUrl,'https://x.com/Cited/status/9');
+  main.querySelector('[data-testid="twitterArticleReadView"]').remove();
+  main.append(text('div',dt('tweetText'),'ordinary body'),media('plain'));
+  const normal=record();
+  assert.equal(normal.text,'ordinary body');
+  assert.equal(normal.coverUrl,undefined);
+  assert.equal(normal.images.length,1);
+  assert.match(normal.images[0].url,/plain/);
+  cited.querySelector('time').remove();
+  assert.equal(record().quoteUrl,undefined);
 }
 
 {

@@ -75,5 +75,9 @@ setImmediate(async()=>{
   assert.equal(el('pager').hidden,true);
   el('clearFilters').onclick(); count(20);
   assert.equal(el('pageNumber').textContent,'第 1 / 3 页');
+  rows.push({title:'Image with text',site:'本机图片',category:'图片',tags:['图片'],image_text:'识别到的独特句子',id:'image',saved:'2025-01-01'});
+  await vm.runInContext('refresh()',ctx);
+  set('find','独特句子'); count(1);
+  assert.equal(el('items').children[0].children[0].textContent,'Image with text');
   console.log('Shelf: author counts, combined filters, pagination, boundaries and reader return OK');
 });
