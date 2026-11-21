@@ -14,3 +14,7 @@
 **/imports/
 **/starfolio-private*.json
 xcuserdata/
+
+**/__pycache__/
+**/avatars/
+**/x-avatar-retry.json

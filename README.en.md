@@ -66,3 +66,9 @@ Import legacy X v3 JSON from the shelf. A translated main post is rejected; tran
 Open an archive and choose **复制图文** (Copy text and pictures), then paste into an editor. By default this copies the title, main text and its saved pictures in order. Check **含评论** to include replies, their authors and pictures. No scrolling or network access is needed. Missing images are marked. Plain-text fields receive text with image descriptions; some rich-text editors may also strip images.
 
 Only an explicit copy writes to the system clipboard. StarFolio never reads it; OS clipboard history or cross-device sync may retain a copy. A single copy is limited to 64 MiB, with a lower system clipboard limit on Android. Oversized copies show an error rather than silently dropping images.
+
+### Offline author avatars (0.2.2)
+
+Posts and replies can show local author portraits from X, Discourse or explicitly marked HTML bylines. Ambiguous identities and missing portraits stay blank. Repeated authors reuse their records, identical image bytes share one file, and the observation date does not claim the photo was current when the post was written. Byline portraits are excluded from **Copy text & images**.
+
+Use `folio import-avatars <avatar-directory>` to enrich an existing shelf offline without fetching articles or changing their body text or inline media. Rerunning skips existing data. For an authorized public X collection, `python3 tools/backfill-x-avatars.py <collection> <private-checkpoint-directory>` fetches missing public profile metadata and portraits only. It respects access blocks; keep checkpoints outside the public collection. Private-site portraits are never automatically published.

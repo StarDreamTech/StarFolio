@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod avatars;
 mod collection;
 #[cfg(any(feature = "app", test))]
 mod copy;
@@ -42,6 +43,10 @@ pub struct Entry {
     pub html: String,
     #[serde(default)]
     pub body_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<avatars::Avatar>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub source_fields: serde_json::Map<String, serde_json::Value>,
 }
@@ -347,6 +352,7 @@ fn make(
         )?;
         ("HTML", t, e, vec![], None)
     };
+    avatars::capture(root, &mut entries, cache.is_none().then_some(&net));
     for e in &mut entries {
         e.body_sha256 = digest(e.html.as_bytes())
     }
@@ -481,8 +487,9 @@ fn article(c: &Capture) -> String {
         } else {
             by
         };
+        let face = e.avatar.as_ref().filter(|a| avatars::valid_name(&a.file)).map(|a|format!("<img class=\"author-avatar\" width=\"32\" height=\"32\" loading=\"lazy\" title=\"头像采集于 {}\" alt=\"\" src=\"../../avatars/objects/{}\"> ",esc(&a.observed),esc(&a.file))).unwrap_or_default();
         h += &format!(
-            "<article class=\"post\" id=\"p{}\"><p class=\"meta\"><a href=\"{}\">#{}</a> · {by}",
+            "<article class=\"post\" id=\"p{}\"><p class=\"meta\">{face}<a href=\"{}\">#{}</a> · {by}",
             e.number,
             esc(&e.url),
             e.number
@@ -519,6 +526,12 @@ pub fn verify(root: &Path, id: &str) -> Result<usize> {
     if c.version >= 2 {
         for e in &c.entries {
             ensure!(e.body_sha256 == digest(e.html.as_bytes()), "正文哈希不匹配")
+        }
+    }
+    let mut seen_avatars = std::collections::HashSet::new();
+    for a in c.entries.iter().filter_map(|e| e.avatar.as_ref()) {
+        if seen_avatars.insert(&a.file) {
+            avatars::bytes(&root.join("avatars"), &a.file)?;
         }
     }
     for a in &c.assets {

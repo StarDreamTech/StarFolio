@@ -97,6 +97,7 @@ pub fn import_collection(root: &Path, src: &Path) -> Result<usize> {
                 .context("资料集媒体完整性检查失败")?;
         }
     }
+    let mut ids = std::collections::HashSet::new();
     let mut n = 0;
     for r in c.records {
         let b = bounded(&src, &r.path, 16 << 20)?;
@@ -111,9 +112,17 @@ pub fn import_collection(root: &Path, src: &Path) -> Result<usize> {
                 || meta.get("format") == Some(&Value::from("starfolio.article.v1")),
             "不支持的归档记录"
         );
-        make(root, &r.url, Some(std::str::from_utf8(&b)?), Some(&cache))
+        let summary = make(root, &r.url, Some(std::str::from_utf8(&b)?), Some(&cache))
             .with_context(|| format!("导入失败：{}", r.path))?;
+        ids.insert(summary.id);
         n += 1
+    }
+    if src.join("avatars/index.json").is_file() {
+        ensure!(
+            src.join("avatars").canonicalize()? == src.join("avatars"),
+            "不接受资料集头像根目录符号链接"
+        );
+        crate::avatars::import_scoped(root, &src.join("avatars"), Some(&ids))?;
     }
     Ok(n)
 }
@@ -226,6 +235,13 @@ pub(crate) fn x_post(
             display: Some(text(author, "name").into()),
             uid: author["id"].as_str().map(Into::into),
             profile: identity_matches.then(|| format!("https://x.com/{handle}")),
+            avatar_url: (identity_matches
+                && author["profileUrl"].as_str().is_some_and(|p| {
+                    p.trim_end_matches('/')
+                        .eq_ignore_ascii_case(&format!("https://x.com/{handle}"))
+                }))
+            .then(|| author["avatarUrl"].as_str().map(str::to_owned))
+            .flatten(),
             source_fields: fields,
             date: p["createdAt"].as_str().map(Into::into),
             url: u.to_string(),

@@ -16,6 +16,7 @@ struct Raw {
     name: Option<String>,
     created_at: String,
     cooked: String,
+    avatar_template: Option<String>,
     reply_to_post_number: Option<i64>,
 }
 #[derive(Deserialize)]
@@ -58,6 +59,11 @@ fn entry(p: Raw, base: &Url, id: i64, image: &mut ImageFn) -> Result<Entry> {
         .push(&p.username);
     let link = base.join(&format!("/t/topic/{id}/{}", p.post_number))?;
     Ok(Entry {
+        avatar_url: p
+            .avatar_template
+            .as_ref()
+            .and_then(|s| base.join(&s.replace("{size}", "96")).ok())
+            .map(Into::into),
         number: p.post_number,
         post_id: Some(p.id),
         url: link.into(),

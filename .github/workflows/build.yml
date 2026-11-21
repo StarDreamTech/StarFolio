@@ -25,6 +25,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
       - run: npm ci
       - run: npm test
+      - run: python tests/backfill-x.py
       - run: npm run tauri -- build --ci --debug --bundles ${{ matrix.bundle }}
       - uses: actions/upload-artifact@v4
         if: runner.os != 'macOS'

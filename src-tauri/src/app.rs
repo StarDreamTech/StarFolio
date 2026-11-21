@@ -58,7 +58,9 @@ async fn read(h: AppHandle, id: String) -> Result<View, String> {
         let c = snapshot(&r, &id)?;
         let css = fs::read_to_string(r.join("styles-private").join(site_css(&c.summary.site)))?;
         Ok(View {
-            html: article(&c).replace(" src=\"images/", " data-local=\""),
+            html: article(&c)
+                .replace(" src=\"images/", " data-local=\"")
+                .replace(" src=\"../../avatars/objects/", " data-avatar=\""),
             css: BASE_CSS.into(),
             site_css: css,
             audit: c.audit,
@@ -88,6 +90,17 @@ async fn image(h: AppHandle, id: String, name: String) -> Result<String, String>
     tauri::async_runtime::spawn_blocking(move || {
         let (mime, b) = copy::image_bytes(&folder(&r, &id)?, &name)?;
         Ok(format!("data:image/{mime};base64,{}", STANDARD.encode(b)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(msg)
+}
+#[tauri::command]
+async fn avatar_image(h: AppHandle, name: String) -> Result<String, String> {
+    let r = root(&h).map_err(msg)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (m, b) = avatars::bytes(&r.join("avatars"), &name)?;
+        Ok(format!("data:image/{m};base64,{}", STANDARD.encode(b)))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -137,6 +150,7 @@ pub fn run() {
             read,
             style,
             image,
+            avatar_image,
             open_link,
             import_file
         ])

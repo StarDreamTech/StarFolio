@@ -112,6 +112,22 @@ fn render(
         return format!("<{tag}>");
     }
     if tag == "img" {
+        if (e.classes().any(|c| c == "avatar") || e.attr("itemprop") == Some("image"))
+            && el
+                .ancestors()
+                .filter_map(ElementRef::wrap)
+                .find(|v| v.value().name() == "a")
+                .is_some_and(|a| {
+                    a.value().attr("rel") == Some("author")
+                        || a.value().attr("data-user-card").is_some()
+                        || a.value().classes().any(|c| c == "author")
+                        || a.ancestors()
+                            .filter_map(ElementRef::wrap)
+                            .any(|v| v.value().classes().any(|c| c == "comment-author"))
+                })
+        {
+            return String::new();
+        }
         let alt = esc(e.attr("alt").unwrap_or("图片"));
         if e.attr("width") == Some("1") || e.attr("height") == Some("1") {
             return String::new();
@@ -201,6 +217,29 @@ fn select_text(el: ElementRef, query: &str) -> Option<String> {
         .map(txt)
         .filter(|v| !v.is_empty())
 }
+/// Only accept an explicit author link owned by this block, never one in a quote or a nested comment.
+pub(crate) fn author_link<'a>(scope: ElementRef<'a>, query: &str) -> Option<ElementRef<'a>> {
+    scope.select(&sel(query)).find(|a| {
+        a.ancestors()
+            .filter_map(ElementRef::wrap)
+            .take_while(|v| v.id() != scope.id())
+            .all(|v| {
+                !is_comment(&v)
+                    && v.value().name() != "blockquote"
+                    && !v.value().classes().any(|c| c == "quote")
+            })
+    })
+}
+pub(crate) fn author_photo(a: Option<ElementRef>, base: &Url) -> Option<String> {
+    let el = a?.select(&sel("img.avatar, img[itemprop=image]")).next()?;
+    link(
+        base,
+        el.value()
+            .attr("data-src")
+            .or_else(|| el.value().attr("src"))?,
+    )
+    .map(Into::into)
+}
 pub fn generic(html: &str, base: &Url, image: &mut ImageFn) -> Result<(String, Vec<Entry>)> {
     let doc = Html::parse_document(html);
     let root = doc.root_element();
@@ -231,13 +270,13 @@ pub fn generic(html: &str, base: &Url, image: &mut ImageFn) -> Result<(String, V
         .and_then(|e| e.value().attr("content"))
         .map(String::from)
         .or_else(|| select_text(main, "[rel=author], [itemprop=author], .byline"));
+    let a = author_link(main, "a[rel=author]");
     let mut out = vec![Entry {
         number: 1,
         url: base.to_string(),
         user: byline,
-        profile: main
-            .select(&sel("a[rel=author]"))
-            .next()
+        avatar_url: author_photo(a, base),
+        profile: a
             .and_then(|e| link(base, e.value().attr("href")?))
             .map(Into::into),
         html: children(main, base, image, true, false, 0),
@@ -255,11 +294,10 @@ pub fn generic(html: &str, base: &Url, image: &mut ImageFn) -> Result<(String, V
         "[itemtype$='/Comment'], [data-comment-id], #comments .comment, .comment-list .comment",
     );
     for (i, c) in doc.select(&cs).enumerate() {
-        let a = c
-            .select(&sel(
-                "a[rel=author], .comment-author a, a.author, a[itemprop=author]",
-            ))
-            .next();
+        let a = author_link(
+            c,
+            "a[rel=author], .comment-author a, a.author, a[itemprop=author]",
+        );
         let user = a
             .map(txt)
             .or_else(|| select_text(c, "[itemprop=author],.comment-author,.author"));
@@ -276,6 +314,7 @@ pub fn generic(html: &str, base: &Url, image: &mut ImageFn) -> Result<(String, V
             url: u.into(),
             user,
             uid: c.value().attr("data-user-id").map(String::from),
+            avatar_url: author_photo(a, base),
             profile: a
                 .and_then(|e| link(base, e.value().attr("href")?))
                 .map(Into::into),

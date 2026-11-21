@@ -304,11 +304,10 @@ fn generic(
             .chain(b.el.ancestors().filter_map(ElementRef::wrap))
             .find(|e| e.value().attr("data-user-id").is_some())
             .unwrap_or(b.el);
-        let a = wrapper
-            .select(&sel(
-                "a[rel=author],a[data-user-card],.author a,.comment-author a",
-            ))
-            .next();
+        let a = extract::author_link(
+            wrapper,
+            "a[rel=author],a[data-user-card],.author a,.comment-author a",
+        );
         let mut url = base.clone();
         if let Some(id) = b.el.value().attr("id") {
             url.set_fragment(Some(id))
@@ -317,6 +316,7 @@ fn generic(
             number: comments.len() as i64 + 2,
             uid: wrapper.value().attr("data-user-id").map(Into::into),
             user: a.map(|x| x.text().collect::<String>()),
+            avatar_url: extract::author_photo(a, base),
             profile: a
                 .and_then(|e| crate::network::link(base, e.value().attr("href")?))
                 .map(Into::into),
@@ -331,6 +331,24 @@ fn generic(
         .next()
         .and_then(|e| e.value().attr("content"))
         .map(Into::into);
+    let scope = doc
+        .select(&sel("article, main"))
+        .next()
+        .unwrap_or(doc.root_element());
+    if let Some(a) = extract::author_link(scope, "a[rel=author]") {
+        let name = a.text().collect::<String>();
+        if main.user.as_deref().is_none_or(|n| n.trim() == name.trim()) {
+            if main.user.is_none() {
+                main.user = Some(name)
+            }
+            main.profile = a
+                .value()
+                .attr("href")
+                .and_then(|href| crate::network::link(base, href))
+                .map(Into::into);
+            main.avatar_url = extract::author_photo(Some(a), base);
+        }
+    }
     let mut rows = vec![main];
     rows.extend(comments);
     audit.stages.push("classified_source_blocks".into());
