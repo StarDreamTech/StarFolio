@@ -2,5 +2,6 @@
   "$schema":"https://schema.tauri.app/config/2", "productName":"StarFolio", "version":"0.2.2", "identifier":"tech.stardream.starfolio",
   "build":{"frontendDist":"../ui"},
   "app":{"withGlobalTauri":true,"windows":[{"title":"星藏 · StarFolio","label":"main","width":1080,"height":760,"minWidth":380,"minHeight":430}],"security":{"csp":"default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; frame-src 'self' about:; base-uri 'none'; form-action 'none'; object-src 'none'"}},
+  "plugins":{"updater":{"pubkey":"","requireSignedVersion":true,"endpoints":["https://github.com/StarDreamTech/StarFolio/releases/latest/download/latest.json"]}},
   "bundle":{"active":true,"macOS":{"signingIdentity":"-"},"targets":"all","icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"]}
 }

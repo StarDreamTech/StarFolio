@@ -1,4 +1,6 @@
 use crate::*;
+#[path = "updates.rs"]
+mod updates;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -141,9 +143,13 @@ fn open_link(h: AppHandle, url: String) -> Result<(), String> {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder.invoke_handler(tauri::generate_handler![
+            updates::app_info,
+            updates::check_update,
+            updates::install_update,
             catalog,
             categorize,
             copy_article,
