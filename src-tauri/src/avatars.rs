@@ -333,7 +333,12 @@ mod tests {
                 vec![true, true, false, false]
             );
             assert_eq!(verify(&r, id).unwrap(), 4);
-            assert_eq!(article(&c).matches("class=\"author-avatar\"").count(), 2);
+            assert_eq!(
+                article(&c, false)
+                    .matches("class=\"author-avatar\"")
+                    .count(),
+                2
+            );
             let clip = crate::copy::prepare(&r, id, true).unwrap();
             assert_eq!(clip.images, 0);
             assert!(!clip.html.contains(&name));

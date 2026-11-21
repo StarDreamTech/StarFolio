@@ -58,7 +58,7 @@ async fn read(h: AppHandle, id: String) -> Result<View, String> {
         let c = snapshot(&r, &id)?;
         let css = fs::read_to_string(r.join("styles-private").join(site_css(&c.summary.site)))?;
         Ok(View {
-            html: article(&c)
+            html: article(&c, true)
                 .replace(" src=\"images/", " data-local=\"")
                 .replace(" src=\"../../avatars/objects/", " data-avatar=\""),
             css: BASE_CSS.into(),

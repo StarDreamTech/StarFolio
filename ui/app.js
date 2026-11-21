@@ -3,6 +3,51 @@ const $=s=>document.getElementById(s), invoke=(cmd,args)=>window.__TAURI__.core.
 const aiLabel=s=>({reviewed:"AI 已复核",needs_review:"AI 建议人工确认",pending:"AI 待复核"})[s]||"AI 未复核";
 let catalog=[], active=null, siteCss='', generation=0, observer, timer;
 function status(x,persist=false){clearTimeout(timer);$('status').textContent=x;if(!persist) timer=setTimeout(()=>$('status').textContent='',5500)}
+const zoneKey='starfolio.displayTimeZone';
+function makeTimeFormatter(zone){
+  const options={timeZone:zone||undefined,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'};
+  try{return new Intl.DateTimeFormat('en-GB',{...options,timeZoneName:'longOffset'})}
+  catch{return new Intl.DateTimeFormat('en-GB',{...options,timeZoneName:'short'})}
+}
+let displayZone='', timeFormatter=makeTimeFormatter('');
+try{
+  const zone=window.localStorage.getItem(zoneKey)||'';
+  timeFormatter=makeTimeFormatter(zone);displayZone=zone;
+}catch{/* The reader can still follow the system timezone without a saved preference. */}
+function displayTime(raw){
+  const stamp=raw?.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/);
+  if(!stamp)return raw;
+  const wall=new Date(stamp[1]+'Z'),date=new Date(stamp[1]+stamp[2]);
+  if(!Number.isFinite(+date)||!Number.isFinite(+wall)||wall.toISOString().slice(0,19)!==stamp[1])return raw;
+  const p=Object.fromEntries(timeFormatter.formatToParts(date).map(({type,value})=>[type,value]));
+  const zone=/^(GMT|UTC)$/.test(p.timeZoneName)?'UTC+00:00':p.timeZoneName.replace(/^GMT/,'UTC');
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} ${zone}`;
+}
+function showReaderTimes(doc){
+  for(const el of doc?.querySelectorAll('time[data-archive-time]')||[]){
+    const original=el.dateTime;
+    el.textContent=displayTime(original);
+    el.title=`原始时间：${original}`;
+  }
+}
+function openZone(){
+  const select=$('timeZone');
+  const zones=Intl.supportedValuesOf?.('timeZone')||['Asia/Tokyo','America/New_York','America/Los_Angeles','Europe/London','Australia/Sydney'];
+  const added=new Set([...select.options].map(o=>o.value));
+  for(const zone of new Set([displayZone,...zones])){
+    if(zone&&!added.has(zone))select.add(new Option(zone,zone));
+  }
+  select.value=displayZone;
+  $('zonePanel').showModal();
+}
+$('libraryZone').onclick=$('readerZone').onclick=openZone;
+$('saveZone').onclick=()=>{
+  const zone=$('timeZone').value;
+  timeFormatter=makeTimeFormatter(zone);displayZone=zone;
+  $('zonePanel').close();cards();
+  if(active)showReaderTimes($('frame').contentDocument);
+  try{window.localStorage.setItem(zoneKey,zone)}catch{status('已应用时区，但本机无法保存设置。')}
+};
 const facets=['category','site','tag'];
 function facetOptions(){for(const [i,k] of facets.entries()){const el=$(k),old=el.value;const values=[...new Set(catalog.flatMap(x=>k==='tag'?(x.tags||[]):[x[k]]).filter(Boolean))].sort((a,b)=>a.localeCompare(b));el.replaceChildren(new Option(['全部分类','全部域名','全部标签'][i],''));if(k==='tag')el.add(new Option('暂无 AI 标签','__untagged'));for(const v of values)el.add(new Option(v,v));if([...el.options].some(o=>o.value===old))el.value=old}}
 function matches(s,q,c,d,t){const tags=s.tags||[];return (!c||c===s.category)&&(!d||d===s.site)&&(!t||(t==='__untagged'?!tags.length:tags.includes(t)))&&[s.title,s.author?.label,s.site,s.category,...tags].join(' ').toLocaleLowerCase().includes(q.trim().toLocaleLowerCase())}
@@ -31,7 +76,7 @@ function cards(){
   for(const s of rows){
     const b=document.createElement('button'),t=document.createElement('strong'),m=document.createElement('span'),l=document.createElement('span');
     b.className='card';t.textContent=s.title;m.className='by';
-    m.textContent=`${s.site}${s.author?' · '+s.author.label:''} · ${new Date(s.saved).toLocaleDateString()} · ${s.posts} 条 · ${s.images} 张图片 · ${aiLabel(s.ai_state)}${s.missing_images+s.missing_posts?' · 部分未保存':''}`;
+    m.textContent=`${s.site}${s.author?' · '+s.author.label:''} · 归档于 ${displayTime(s.saved)} · ${s.posts} 条 · ${s.images} 张图片 · ${aiLabel(s.ai_state)}${s.missing_images+s.missing_posts?' · 部分未保存':''}`;
     l.className='labels';l.textContent=[s.category,...(s.tags||[]).map(x=>'#'+x)].filter(Boolean).join(' · ');
     b.append(t,m,l);b.onclick=()=>read(s.id).catch(e=>status(String(e)));items.append(b);
   }
@@ -41,7 +86,7 @@ for(const k of [...facets,'author'])$(k).onchange=()=>{if(k==='site')$('author')
 $('clearFilters').onclick=()=>{for(const k of [...facets,'author','find'])$(k).value='';cards()};
 async function refresh(){const [path,entries]=await invoke('catalog');catalog=entries;$('location').textContent=path;facetOptions();cards()}
 $('capture').onsubmit=async e=>{e.preventDefault();$('save').disabled=true;status('正在保存正文、评论和图片…',true);try{const s=await invoke('save',{url:$('url').value});await refresh();$('url').value='';await read(s.id);status(s.missing_posts+s.missing_images?`已保存；缺 ${s.missing_posts} 楼、${s.missing_images} 个图片来源。`:'归档完成，可以离线阅读。')}catch(err){status(String(err),true)}finally{$('save').disabled=false}};
-async function read(id){const gen=++generation;const v=await invoke('read',{id});if(gen!==generation)return;active=id;$('copyReplies').checked=false;$('copyReplies').disabled=!(catalog.find(s=>s.id===id)?.posts>1);siteCss=v.site_css;setAudit(v.audit);$('library').hidden=true;$('reader').hidden=false;observer?.disconnect();const f=$('frame');f.onload=()=>{if(gen!==generation)return;const d=f.contentDocument;if(!d)return;const s=d.createElement('style');s.textContent=v.css+'\n'+siteCss;d.head.append(s);const box=d.querySelector('main');box.innerHTML=v.html;d.addEventListener('click',ev=>{const a=ev.target.closest?.('a[href]');if(!a)return;ev.preventDefault();const href=a.getAttribute('href');if(/^#p\d+$/.test(href))d.getElementById(href.slice(1))?.scrollIntoView();else if(/^https?:\/\//i.test(href))invoke('open_link',{url:href}).catch(e=>status(String(e)))});const jobs=new Map();observer=new IntersectionObserver(changes=>{for(const c of changes){if(!c.isIntersecting)continue;observer.unobserve(c.target);const el=c.target,name=el.dataset.avatar||el.dataset.local,key=(el.dataset.avatar?'avatar:':'image:')+name;if(!jobs.has(key))jobs.set(key,el.dataset.avatar?invoke('avatar_image',{name}):invoke('image',{id,name}));jobs.get(key).then(data=>{if(gen===generation)el.src=data}).catch(()=>{el.alt='本地图片无法读取'})}},{root:d,rootMargin:'280px'});box.querySelectorAll('img[data-local],img[data-avatar]').forEach(el=>observer.observe(el))};f.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; form-action \'none\'; base-uri \'none\'"></head><body><main></main></body></html>'}
+async function read(id){const gen=++generation;const v=await invoke('read',{id});if(gen!==generation)return;active=id;$('copyReplies').checked=false;$('copyReplies').disabled=!(catalog.find(s=>s.id===id)?.posts>1);siteCss=v.site_css;setAudit(v.audit);$('library').hidden=true;$('reader').hidden=false;observer?.disconnect();const f=$('frame');f.onload=()=>{if(gen!==generation)return;const d=f.contentDocument;if(!d)return;const s=d.createElement('style');s.textContent=v.css+'\n'+siteCss;d.head.append(s);const box=d.querySelector('main');box.innerHTML=v.html;showReaderTimes(d);d.addEventListener('click',ev=>{const a=ev.target.closest?.('a[href]');if(!a)return;ev.preventDefault();const href=a.getAttribute('href');if(/^#p\d+$/.test(href))d.getElementById(href.slice(1))?.scrollIntoView();else if(/^https?:\/\//i.test(href))invoke('open_link',{url:href}).catch(e=>status(String(e)))});const jobs=new Map();observer=new IntersectionObserver(changes=>{for(const c of changes){if(!c.isIntersecting)continue;observer.unobserve(c.target);const el=c.target,name=el.dataset.avatar||el.dataset.local,key=(el.dataset.avatar?'avatar:':'image:')+name;if(!jobs.has(key))jobs.set(key,el.dataset.avatar?invoke('avatar_image',{name}):invoke('image',{id,name}));jobs.get(key).then(data=>{if(gen===generation)el.src=data}).catch(()=>{el.alt='本地图片无法读取'})}},{root:d,rootMargin:'280px'});box.querySelectorAll('img[data-local],img[data-avatar]').forEach(el=>observer.observe(el))};f.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; form-action \'none\'; base-uri \'none\'"></head><body><main></main></body></html>'}
 $('back').onclick=()=>{++generation;active=null;observer?.disconnect();const f=$('frame');f.onload=null;f.srcdoc='';$('reader').hidden=true;$('library').hidden=false};$('find').oninput=cards;$('edit').onclick=()=>{$('css').value=siteCss;$('styler').showModal()};$('apply').onclick=async()=>{if(!active)return;try{await invoke('style',{id:active,css:$('css').value});$('styler').close();await read(active);status('已对该站点的全部归档应用样式。')}catch(e){status(String(e))}};refresh().catch(e=>status('无法打开书架：'+e,true));
 $('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;try{if(file.size>16*1024*1024)throw Error('文件超过 16 MiB');const data=await file.text();let url=$('url').value.trim();if(!url&&data.trimStart().startsWith('{'))url=JSON.parse(data).url;if(!url)throw Error('请先填写原文链接，然后重新选择文件。');status('正在导入正文和图片…',true);$('save').disabled=true;const s=await invoke('import_file',{url,content:data});await refresh();await read(s.id);status('导入完成。')}catch(e){status(String(e),true)}finally{$('file').value='';$('save').disabled=false}};
 
