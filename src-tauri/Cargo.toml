@@ -18,8 +18,9 @@ required-features = ["app"]
 
 [features]
 default = ["app"]
-app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:arboard", "dep:jni", "dep:objc2-ui-kit", "dep:objc2-foundation", "dep:objc2"]
+app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:tauri-plugin-updater", "dep:arboard", "dep:jni", "dep:objc2-ui-kit", "dep:objc2-foundation", "dep:objc2"]
 custom-protocol = ["app", "tauri/custom-protocol"]
+updater-smoke = ["app", "tauri/test", "dep:reqwest"]
 
 [dependencies]
 anyhow = "1"
@@ -38,6 +39,8 @@ tauri = { version = "2", optional = true , features = [] }
 tauri-plugin-opener = { version = "2", optional = true }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-updater = { version = "2.14", default-features = false, features = ["rustls-tls", "zip"], optional = true }
+reqwest = { version = "0.13", default-features = false, optional = true } # updater-smoke: trust only the test certificate
 arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"], optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]

@@ -53,6 +53,10 @@ If a discussion is normally readable in your browser but automated downloads are
 
 On Android, run `npm run tauri -- android init`, then `npm run tauri -- android build`. For iOS, use the project at `src-tauri/gen/apple` via `npm run tauri -- ios build`. A successful build is not device testing; consult CI for each platform.
 
+## About and updates
+
+The GitHub icon opens the project repository. **关于** (About) shows the current version. Signed desktop builds can check manually or opt into checks at startup (off by default). A new version is offered first; only **安装并重启** (Install and restart) downloads the package, verifies its signature and signed version, and installs it. Updates do not send or modify archives. Preview builds without a configured key and mobile builds do not offer in-app updates. See [packaging and local verification](docs/updates.md).
+
 ## Organizing and migrating archives (0.2)
 
 Use **打开原文** (Open original) in the reader toolbar to open the archived source in your default browser, even while reading replies. The button is hidden when there is no source URL. Offline reading never visits the source automatically.
