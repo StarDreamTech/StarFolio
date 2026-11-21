@@ -40,7 +40,7 @@ function openZone(){
   select.value=displayZone;
   $('zonePanel').showModal();
 }
-$('libraryZone').onclick=$('readerZone').onclick=openZone;
+$('zoneBtn').onclick=openZone;
 $('saveZone').onclick=()=>{
   const zone=$('timeZone').value;
   timeFormatter=makeTimeFormatter(zone);displayZone=zone;

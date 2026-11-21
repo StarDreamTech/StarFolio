@@ -25,9 +25,9 @@ function app(){
   return {el,times,value:()=>el('items').children[0].children[1].textContent,eval:s=>vm.runInNewContext(s,ctx)};
 }
 (async()=>{
-  for(const id of ['libraryZone','readerZone','zonePanel','timeZone','saveZone'])assert.ok(markup.includes(`id="${id}"`));
+  for(const id of ['zoneBtn','zonePanel','timeZone','saveZone'])assert.ok(markup.includes(`id="${id}"`));
   const a=app(); await new Promise(setImmediate);
-  a.el('libraryZone').onclick(); assert.equal(a.el('zonePanel').open,true);
+  a.el('zoneBtn').onclick(); assert.equal(a.el('zonePanel').open,true);
   assert.equal(a.el('timeZone').value,'');
   a.el('timeZone').value='Asia/Shanghai'; a.el('saveZone').onclick();
   assert.equal(a.el('zonePanel').open,false);
@@ -37,19 +37,19 @@ function app(){
   assert.equal(a.times[1].dateTime,posted);
   assert.equal(a.times[1].title,`原始时间：${posted}`);
   assert.equal(a.times[3].textContent,undated);
-  a.el('readerZone').onclick(); assert.equal(a.el('timeZone').value,'Asia/Shanghai');
+  a.el('zoneBtn').onclick(); assert.equal(a.el('timeZone').value,'Asia/Shanghai');
   a.el('timeZone').value='America/New_York'; a.el('saveZone').onclick();
   assert.equal(a.times[0].textContent,'2025-02-03 21:33:44 UTC-05:00');
   assert.equal(a.times[2].textContent,'2025-07-04 03:10:12 UTC-04:00');
   assert.match(a.value(),/归档于 2025-02-03 21:33:44 UTC-05:00/);
   const b=app(); await new Promise(setImmediate);
   assert.match(b.value(),/2025-02-03 21:33:44 UTC-05:00/);
-  b.el('libraryZone').onclick(); assert.equal(b.el('timeZone').value,'America/New_York');
+  b.el('zoneBtn').onclick(); assert.equal(b.el('timeZone').value,'America/New_York');
   b.el('timeZone').value='UTC'; b.el('saveZone').onclick();
   assert.match(b.value(),/归档于 2025-02-04 02:33:44 UTC\+00:00/);
   assert.equal(b.eval(`displayTime('2025-02-30T02:22:11Z')`),'2025-02-30T02:22:11Z');
   assert.equal(b.eval(`displayTime('2025-02-04')`),'2025-02-04');
   store.set('starfolio.displayTimeZone','bad/zone'); const c=app(); await new Promise(setImmediate);
-  c.el('libraryZone').onclick(); assert.equal(c.el('timeZone').value,'');
+  c.el('zoneBtn').onclick(); assert.equal(c.el('timeZone').value,'');
   console.log('Display timezone: shelf, reader, UTC+8, UTC, DST, fallback and persistence OK');
 })().catch(e=>{console.error(e);process.exitCode=1});
