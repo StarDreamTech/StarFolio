@@ -69,6 +69,7 @@ fn entry(p: Raw, base: &Url, id: i64, image: &mut ImageFn) -> Result<Entry> {
         reply: p.reply_to_post_number,
         html: fragment(&p.cooked, base, image),
         body_sha256: String::new(),
+        ..Default::default()
     })
 }
 #[derive(Deserialize)]

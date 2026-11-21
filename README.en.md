@@ -52,3 +52,11 @@ Unavailable models, invalid answers and budget limits are recorded. The library 
 If a discussion is normally readable in your browser but automated downloads are restricted, open the local `tools/bookmark.html` and drag its link to your bookmarks. Activate it on the first post and scroll normally; the counter exports only posts actually displayed. Import that JSON in the app. No cookie access or automated paging. Ordinary articles can be imported as UTF-8 HTML; embedded images are preferable because arbitrary local image paths are never opened.
 
 On Android, run `npm run tauri -- android init`, then `npm run tauri -- android build`. For iOS, use the project at `src-tauri/gen/apple` via `npm run tauri -- ios build`. A successful build is not device testing; consult CI for each platform.
+
+## Organizing and migrating archives (0.2)
+
+Combine category, domain, AI tag and text filters; **Untagged** includes older snapshots. Use the reader's category editor to set a personal category, or clear it to restore the source category. The local model suggests up to five topic tags from the title and a main-text excerpt during capture. A missing model or invalid output never invents tags or clears previously assigned tags. Review again to retry without visiting the site.
+
+Import legacy X v3 JSON from the shelf. A translated main post is rejected; translated replies explicitly marked in historical files are retained with a notice. `tools/x-bookmark.html` can export originals and replies you explicitly record while reading a public thread. No automatic paging, login handling, nested-reply expansion or video extraction; stop at a challenge. Status IDs, attribution and links, reply type, available timestamps, media and historical metrics are retained when the source contains them.
+
+`folio import-collection <directory>` checks the catalog's record and local image hashes, never downloads missing images, and can resume without duplicating unchanged records. Set `STARFOLIO_LIBRARY` for an isolated CLI shelf. The GUI always uses its private data directory; there is no automatic GitHub publishing or sync.

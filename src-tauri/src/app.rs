@@ -25,6 +25,10 @@ async fn save(h: AppHandle, url: String) -> Result<Summary, String> {
         .map_err(msg)
 }
 #[tauri::command]
+fn categorize(h: AppHandle, id: String, name: String) -> Result<(), String> {
+    set_category(&root(&h).map_err(msg)?, &id, &name).map_err(msg)
+}
+#[tauri::command]
 async fn import_file(h: AppHandle, url: String, content: String) -> Result<Summary, String> {
     let r = root(&h).map_err(msg)?;
     tauri::async_runtime::spawn_blocking(move || import(&r, &url, &content))
@@ -117,6 +121,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             catalog,
+            categorize,
             review_again,
             save,
             read,

@@ -467,3 +467,65 @@ mod tests {
         assert_eq!(b[0].excerpt, "Original.");
     }
 }
+
+pub(crate) fn tag(model: &dyn Judge, title: &str, entries: &[Entry]) -> Result<Vec<String>> {
+    let source = entries.first().context("没有正文")?;
+    let doc = Html::parse_fragment(&source.html);
+    let excerpt: String = doc
+        .root_element()
+        .text()
+        .flat_map(str::chars)
+        .take(1400)
+        .collect();
+    let reply=model.ask(&format!("{SAFETY} 为这篇文章选择 1–5 个简短、具体的中文主题标签，只依据标题与正文。不要输出网址、人名、联系方式或推测个人属性。"),json!({"title":title.chars().take(160).collect::<String>(),"excerpt":excerpt}),json!({"type":"object","properties":{"tags":{"type":"array","minItems":1,"maxItems":5,"items":{"type":"string"}}},"required":["tags"]}))?;
+    let vals = reply["tags"].as_array().context("缺少标签")?;
+    ensure!((1..=5).contains(&vals.len()), "标签数量无效");
+    let mut tags: Vec<String> = Vec::new();
+    for v in vals {
+        let s = v.as_str().context("标签非文本")?.trim();
+        ensure!(
+            (1..=24).contains(&s.chars().count())
+                && s.chars().all(|c| c.is_alphanumeric() || " +#-".contains(c))
+                && s.chars().any(char::is_alphanumeric),
+            "标签不是简短主题"
+        );
+        if !tags.iter().any(|x| x.to_lowercase() == s.to_lowercase()) {
+            tags.push(s.into())
+        }
+    }
+    Ok(tags)
+}
+#[cfg(test)]
+mod tag_tests {
+    use super::*;
+    struct Mock(Value);
+    impl Judge for Mock {
+        fn ask(&self, _: &str, input: Value, _: Value) -> Result<Value> {
+            assert!(input["excerpt"].as_str().unwrap().chars().count() <= 1400);
+            Ok(self.0.clone())
+        }
+    }
+    #[test]
+    fn accepts_only_bounded_unique_labels() {
+        let rows = [Entry {
+            html: "<p>sample</p>".into(),
+            ..Default::default()
+        }];
+        for bad in [
+            json!({"tags":[]}),
+            json!({"tags":["<script>"]}),
+            json!({"tags":["hi","https://example.org"]}),
+        ] {
+            assert!(tag(&Mock(bad), "demo", &rows).is_err())
+        }
+        assert_eq!(
+            tag(
+                &Mock(json!({"tags":["Rust","rust","数据备份"]})),
+                "demo",
+                &rows
+            )
+            .unwrap(),
+            ["Rust", "数据备份"]
+        );
+    }
+}

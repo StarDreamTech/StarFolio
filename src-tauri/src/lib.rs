@@ -1,4 +1,6 @@
 pub mod ai;
+mod collection;
+pub use collection::import_collection;
 #[cfg(feature = "app")]
 mod app;
 mod discussion;
@@ -36,6 +38,8 @@ pub struct Entry {
     pub html: String,
     #[serde(default)]
     pub body_sha256: String,
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub source_fields: serde_json::Map<String, serde_json::Value>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Summary {
@@ -51,6 +55,10 @@ pub struct Summary {
     pub missing_posts: usize,
     #[serde(default)]
     pub ai_state: String,
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Asset {
@@ -149,6 +157,7 @@ fn raster(b: &[u8]) -> Option<&'static str> {
 struct Images<'a> {
     dir: PathBuf,
     net: &'a Net,
+    cache: Option<&'a collection::Cache<'a>>,
     assets: Vec<Asset>,
     urls: HashMap<String, Option<String>>,
     bytes: usize,
@@ -181,6 +190,8 @@ impl Images<'_> {
                 let b = base64::engine::general_purpose::STANDARD.decode(raw)?;
                 ensure!(b.len() <= limit, "内嵌图片过大");
                 b
+            } else if let Some(cache) = self.cache {
+                cache.image(&u, limit)?
             } else {
                 self.net.get(u.clone(), limit)?.bytes
             };
@@ -207,16 +218,47 @@ impl Images<'_> {
     }
 }
 pub fn capture(root: &Path, raw: &str) -> Result<Summary> {
-    make(root, raw, None)
+    make(root, raw, None, None)
 }
 pub fn import(root: &Path, raw: &str, data: &str) -> Result<Summary> {
     ensure!(data.len() <= 16 << 20, "导入文件超过 16 MiB");
-    make(root, raw, Some(data))
+    make(root, raw, Some(data), None)
 }
-fn make(root: &Path, raw: &str, data: Option<&str>) -> Result<Summary> {
+fn make(
+    root: &Path,
+    raw: &str,
+    data: Option<&str>,
+    cache: Option<&collection::Cache>,
+) -> Result<Summary> {
     let mut u = Url::parse(raw.trim())?;
     public(&u)?;
     u.set_fragment(None);
+    let stable = data
+        .filter(|x| x.trim_start().starts_with('{'))
+        .and_then(|d| {
+            serde_json::from_str::<serde_json::Value>(d)
+                .ok()
+                .filter(|v| v["source"] == "x" || v["format"] == "starfolio.article.v1")
+                .map(|v| {
+                    digest(
+                        format!(
+                            "record-v1|{u}|{}|{}",
+                            digest(d.as_bytes()),
+                            cache
+                                .map(|c| c.signature(&v, &u))
+                                .unwrap_or_else(|| "single".into())
+                        )
+                        .as_bytes(),
+                    )
+                })
+        });
+    if let Some(id) = &stable {
+        let p = folder(root, id)?;
+        if p.is_dir() {
+            verify(root, id)?;
+            return Ok(serde_json::from_slice(&fs::read(p.join("summary.json"))?)?);
+        }
+    }
     let net = Net::default();
     let tin = Utc::now();
     let model = ai::Model::discover();
@@ -238,24 +280,42 @@ fn make(root: &Path, raw: &str, data: Option<&str>) -> Result<Summary> {
     let mut imgs = Images {
         dir,
         net: &net,
+        cache,
         assets: vec![],
         urls: HashMap::new(),
         bytes: 0,
     };
     let mut grab = |u: &Url| imgs.save(u);
     let mut unknown_missing = 0;
+    let mut imported_category = None;
     let (kind, title, mut entries, missing, pagination_error) = if let Some(data) = data {
         if data.trim_start().starts_with('{') {
-            let b: discussion::BrowserCopy = serde_json::from_str(data)?;
-            let source = Url::parse(&b.url)?;
-            ensure!(
-                source.origin() == u.origin()
-                    && discussion::topic_id(&u) == discussion::topic_id(&source),
-                "导入的来源链接不匹配"
-            );
-            let (t, e, m) = b.read(&u, &mut grab)?;
-            unknown_missing = m;
-            ("Discourse · 浏览器", t, e, vec![], None)
+            let v: serde_json::Value = serde_json::from_str(data)?;
+            if v["source"] == "x" {
+                let (t, e) = collection::x_post(&v, &u, &mut grab)?;
+                ("X · 可见讨论", t, e, vec![], None)
+            } else if v["format"] == "starfolio.article.v1" {
+                let (t, e) = collection::blog(&v, &u, &mut grab)?;
+                imported_category = v["category"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| {
+                        !s.is_empty() && s.chars().count() <= 32 && !s.chars().any(char::is_control)
+                    })
+                    .map(str::to_owned);
+                ("博客 · 导入", t, e, vec![], None)
+            } else {
+                let b: discussion::BrowserCopy = serde_json::from_str(data)?;
+                let source = Url::parse(&b.url)?;
+                ensure!(
+                    source.origin() == u.origin()
+                        && discussion::topic_id(&u) == discussion::topic_id(&source),
+                    "导入的来源链接不匹配"
+                );
+                let (t, e, m) = b.read(&u, &mut grab)?;
+                unknown_missing = m;
+                ("Discourse · 浏览器", t, e, vec![], None)
+            }
         } else {
             let (t, e) = ai::extract_page(
                 model.as_ref().map(|m| m as &dyn ai::Judge),
@@ -298,10 +358,20 @@ fn make(root: &Path, raw: &str, data: Option<&str>) -> Result<Summary> {
             }
         }
     }
+    let tags = model
+        .as_ref()
+        .and_then(|m| {
+            ai::tag(m, &title, &entries)
+                .map_err(|e| audit.notes.push(format!("AI 标签待生成：{e}")))
+                .ok()
+        })
+        .unwrap_or_default();
     let topic_id = discussion::topic_id(&u);
     let site = u.host_str().unwrap().to_string();
     init(root, &site)?;
-    let id = digest(format!("{}|{}|{:?}", u, tin, tmp.path().file_name()).as_bytes());
+    let id = stable.unwrap_or_else(|| {
+        digest(format!("{}|{}|{:?}", u, tin, tmp.path().file_name()).as_bytes())
+    });
     let summary = Summary {
         id: id.clone(),
         title,
@@ -309,6 +379,8 @@ fn make(root: &Path, raw: &str, data: Option<&str>) -> Result<Summary> {
         url: u.into(),
         saved: tin.to_rfc3339(),
         kind: kind.into(),
+        category: imported_category.unwrap_or_else(|| category(kind).into()),
+        tags,
         ai_state: audit.state.clone(),
         posts: entries.len(),
         missing_posts: missing.len() + unknown_missing,
@@ -343,6 +415,27 @@ fn folder(root: &Path, id: &str) -> Result<PathBuf> {
     ensure!(key(id), "无效的快照编号");
     Ok(root.join("snapshots").join(id))
 }
+fn category(kind: &str) -> &'static str {
+    if kind.starts_with("Discourse") {
+        "论坛讨论"
+    } else if kind.starts_with("X ·") {
+        "社交帖子"
+    } else if kind.starts_with("博客") {
+        "博客文章"
+    } else {
+        "网页文章"
+    }
+}
+pub fn set_category(root: &Path, id: &str, name: &str) -> Result<()> {
+    let name = name.trim();
+    ensure!(
+        name.chars().count() <= 32 && !name.chars().any(char::is_control),
+        "分类名限 32 字"
+    );
+    let dir = folder(root, id)?;
+    ensure!(dir.join("summary.json").is_file(), "不存在的归档");
+    atomic(&dir.join("category.txt"), name.as_bytes())
+}
 pub fn list(root: &Path) -> Result<Vec<Summary>> {
     let mut r = Vec::new();
     let dirs = match fs::read_dir(root.join("snapshots")) {
@@ -353,9 +446,16 @@ pub fn list(root: &Path) -> Result<Vec<Summary>> {
     for d in dirs {
         let d = d?;
         if key(&d.file_name().to_string_lossy()) {
-            r.push(serde_json::from_slice::<Summary>(&fs::read(
-                d.path().join("summary.json"),
-            )?)?)
+            let mut s: Summary = serde_json::from_slice(&fs::read(d.path().join("summary.json"))?)?;
+            if s.category.is_empty() {
+                s.category = category(&s.kind).into()
+            }
+            if let Ok(override_name) = fs::read_to_string(d.path().join("category.txt")) {
+                if !override_name.trim().is_empty() {
+                    s.category = override_name;
+                }
+            }
+            r.push(s);
         }
     }
     r.sort_by(|a, b| b.saved.cmp(&a.saved));
@@ -469,6 +569,10 @@ pub fn recheck(root: &Path, id: &str) -> Result<ai::Audit> {
     }
     audit.stages.push("integrity_verified".into());
     if let Some(m) = m {
+        match ai::tag(&m, &c.summary.title, &c.entries) {
+            Ok(tags) => c.summary.tags = tags,
+            Err(e) => audit.notes.push(format!("AI 标签未更新：{e}")),
+        };
         match ai::review(&m, &c.entries, &mut audit) {
             Ok(()) => audit.finish(),
             Err(e) => {
@@ -481,7 +585,10 @@ pub fn recheck(root: &Path, id: &str) -> Result<ai::Audit> {
         c.audit
             .notes
             .push("本次未能完成新的复核；继续显示上次结果".into());
-        return Ok(c.audit);
+        audit = std::mem::take(&mut c.audit);
+    }
+    if c.summary.category.is_empty() {
+        c.summary.category = category(&c.summary.kind).into()
     }
     c.summary.ai_state = audit.state.clone();
     c.audit = audit;
