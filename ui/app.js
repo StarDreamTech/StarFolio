@@ -5,9 +5,40 @@ let catalog=[], active=null, siteCss='', generation=0, observer, timer;
 function status(x,persist=false){clearTimeout(timer);$('status').textContent=x;if(!persist) timer=setTimeout(()=>$('status').textContent='',5500)}
 const facets=['category','site','tag'];
 function facetOptions(){for(const [i,k] of facets.entries()){const el=$(k),old=el.value;const values=[...new Set(catalog.flatMap(x=>k==='tag'?(x.tags||[]):[x[k]]).filter(Boolean))].sort((a,b)=>a.localeCompare(b));el.replaceChildren(new Option(['全部分类','全部域名','全部标签'][i],''));if(k==='tag')el.add(new Option('暂无 AI 标签','__untagged'));for(const v of values)el.add(new Option(v,v));if([...el.options].some(o=>o.value===old))el.value=old}}
-function matches(s,q,c,d,t){const tags=s.tags||[];return (!c||c===s.category)&&(!d||d===s.site)&&(!t||(t==='__untagged'?!tags.length:tags.includes(t)))&&[s.title,s.site,s.category,...tags].join(' ').toLocaleLowerCase().includes(q.trim().toLocaleLowerCase())}
-function cards(){const items=$('items');items.replaceChildren();const rows=catalog.filter(s=>matches(s,$('find').value,...facets.map(k=>$(k).value)));$('count').textContent=`显示 ${rows.length} / ${catalog.length} 篇`;for(const s of rows){const b=document.createElement('button'),t=document.createElement('strong'),m=document.createElement('span'),l=document.createElement('span');b.className='card';t.textContent=s.title;m.className='by';m.textContent=`${s.site} · ${new Date(s.saved).toLocaleDateString()} · ${s.posts} 条 · ${s.images} 张图片 · ${aiLabel(s.ai_state)}${s.missing_images+s.missing_posts?' · 部分未保存':''}`;l.className='labels';l.textContent=[s.category,...(s.tags||[]).map(x=>'#'+x)].filter(Boolean).join(' · ');b.append(t,m,l);b.onclick=()=>read(s.id).catch(e=>status(String(e)));items.append(b)}if(!rows.length)items.textContent=catalog.length?'没有符合这些条件的归档。':'书架还空着。粘贴第一篇文章的链接开始。'}
-for(const k of facets)$(k).onchange=cards;$('clearFilters').onclick=()=>{for(const k of facets)$(k).value='';$('find').value='';cards()};
+function matches(s,q,c,d,t){const tags=s.tags||[];return (!c||c===s.category)&&(!d||d===s.site)&&(!t||(t==='__untagged'?!tags.length:tags.includes(t)))&&[s.title,s.author?.label,s.site,s.category,...tags].join(' ').toLocaleLowerCase().includes(q.trim().toLocaleLowerCase())}
+const authorKey=s=>s.author?.key||'__unknown_author';
+function authorOptions(rows){
+  const el=$('author'),old=el.value,counts=new Map();
+  for(const s of rows){
+    const key=authorKey(s);
+    if(!counts.has(key))counts.set(key,{key,label:s.author?.label||'未记录作者',count:0});
+    counts.get(key).count++;
+  }
+  if(old&&!counts.has(old)){
+    const s=catalog.find(s=>authorKey(s)===old);
+    if(s)counts.set(old,{key:old,label:s.author?.label||'未记录作者',count:0});
+  }
+  const options=[...counts.values()].sort((a,b)=>Number(a.key==='__unknown_author')-Number(b.key==='__unknown_author')||b.count-a.count||a.label.localeCompare(b.label,'zh-CN'));
+  el.replaceChildren(new Option('全部作者',''),...options.map(a=>new Option(`${a.label} · ${a.count} 篇`,a.key)));
+  if(counts.has(old))el.value=old;
+}
+function cards(){
+  const items=$('items');items.replaceChildren();
+  const candidates=catalog.filter(s=>matches(s,$('find').value,...facets.map(k=>$(k).value)));
+  authorOptions(candidates);
+  const author=$('author').value,rows=author?candidates.filter(s=>authorKey(s)===author):candidates;
+  $('count').textContent=`显示 ${rows.length} / ${catalog.length} 篇`;
+  for(const s of rows){
+    const b=document.createElement('button'),t=document.createElement('strong'),m=document.createElement('span'),l=document.createElement('span');
+    b.className='card';t.textContent=s.title;m.className='by';
+    m.textContent=`${s.site}${s.author?' · '+s.author.label:''} · ${new Date(s.saved).toLocaleDateString()} · ${s.posts} 条 · ${s.images} 张图片 · ${aiLabel(s.ai_state)}${s.missing_images+s.missing_posts?' · 部分未保存':''}`;
+    l.className='labels';l.textContent=[s.category,...(s.tags||[]).map(x=>'#'+x)].filter(Boolean).join(' · ');
+    b.append(t,m,l);b.onclick=()=>read(s.id).catch(e=>status(String(e)));items.append(b);
+  }
+  if(!rows.length)items.textContent=catalog.length?'没有符合这些条件的归档。':'书架还空着。粘贴第一篇文章的链接开始。';
+}
+for(const k of [...facets,'author'])$(k).onchange=()=>{if(k==='site')$('author').value='';cards()};
+$('clearFilters').onclick=()=>{for(const k of [...facets,'author','find'])$(k).value='';cards()};
 async function refresh(){const [path,entries]=await invoke('catalog');catalog=entries;$('location').textContent=path;facetOptions();cards()}
 $('capture').onsubmit=async e=>{e.preventDefault();$('save').disabled=true;status('正在保存正文、评论和图片…',true);try{const s=await invoke('save',{url:$('url').value});await refresh();$('url').value='';await read(s.id);status(s.missing_posts+s.missing_images?`已保存；缺 ${s.missing_posts} 楼、${s.missing_images} 个图片来源。`:'归档完成，可以离线阅读。')}catch(err){status(String(err),true)}finally{$('save').disabled=false}};
 async function read(id){const gen=++generation;const v=await invoke('read',{id});if(gen!==generation)return;active=id;$('copyReplies').checked=false;$('copyReplies').disabled=!(catalog.find(s=>s.id===id)?.posts>1);siteCss=v.site_css;setAudit(v.audit);$('library').hidden=true;$('reader').hidden=false;observer?.disconnect();const f=$('frame');f.onload=()=>{if(gen!==generation)return;const d=f.contentDocument;if(!d)return;const s=d.createElement('style');s.textContent=v.css+'\n'+siteCss;d.head.append(s);const box=d.querySelector('main');box.innerHTML=v.html;d.addEventListener('click',ev=>{const a=ev.target.closest?.('a[href]');if(!a)return;ev.preventDefault();const href=a.getAttribute('href');if(/^#p\d+$/.test(href))d.getElementById(href.slice(1))?.scrollIntoView();else if(/^https?:\/\//i.test(href))invoke('open_link',{url:href}).catch(e=>status(String(e)))});const jobs=new Map();observer=new IntersectionObserver(changes=>{for(const c of changes){if(!c.isIntersecting)continue;observer.unobserve(c.target);const el=c.target,name=el.dataset.avatar||el.dataset.local,key=(el.dataset.avatar?'avatar:':'image:')+name;if(!jobs.has(key))jobs.set(key,el.dataset.avatar?invoke('avatar_image',{name}):invoke('image',{id,name}));jobs.get(key).then(data=>{if(gen===generation)el.src=data}).catch(()=>{el.alt='本地图片无法读取'})}},{root:d,rootMargin:'280px'});box.querySelectorAll('img[data-local],img[data-avatar]').forEach(el=>observer.observe(el))};f.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; form-action \'none\'; base-uri \'none\'"></head><body><main></main></body></html>'}

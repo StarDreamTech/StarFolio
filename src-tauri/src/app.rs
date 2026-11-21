@@ -9,12 +9,12 @@ fn msg(e: anyhow::Error) -> String {
     format!("{e:#}")
 }
 #[tauri::command]
-fn catalog(h: AppHandle) -> Result<(String, Vec<Summary>), String> {
-    (|| {
-        let r = root(&h)?;
-        Ok((r.display().to_string(), list(&r)?))
-    })()
-    .map_err(msg)
+async fn catalog(h: AppHandle) -> Result<(String, Vec<Summary>), String> {
+    let r = root(&h).map_err(msg)?;
+    tauri::async_runtime::spawn_blocking(move || Ok((r.display().to_string(), list(&r)?)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(msg)
 }
 #[tauri::command]
 async fn save(h: AppHandle, url: String) -> Result<Summary, String> {
