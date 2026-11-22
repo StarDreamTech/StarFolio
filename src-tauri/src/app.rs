@@ -19,12 +19,20 @@ async fn catalog(h: AppHandle) -> Result<(String, Vec<Summary>), String> {
         .map_err(msg)
 }
 #[tauri::command]
-async fn save(h: AppHandle, url: String) -> Result<Summary, String> {
+fn enqueue_url(h: AppHandle, url: String) -> Result<queue::Job, String> {
+    queue::enqueue(&root(&h).map_err(msg)?, &url).map_err(msg)
+}
+#[tauri::command]
+async fn archive_queue(h: AppHandle) -> Result<Vec<queue::Job>, String> {
     let r = root(&h).map_err(msg)?;
-    tauri::async_runtime::spawn_blocking(move || capture(&r, &url))
+    tauri::async_runtime::spawn_blocking(move || queue::list_jobs(&r))
         .await
         .map_err(|e| e.to_string())?
         .map_err(msg)
+}
+#[tauri::command]
+fn retry_archive(h: AppHandle, id: String) -> Result<(), String> {
+    queue::retry(&root(&h).map_err(msg)?, &id).map_err(msg)
 }
 #[tauri::command]
 fn categorize(h: AppHandle, id: String, name: String) -> Result<(), String> {
@@ -158,7 +166,9 @@ pub fn run() {
             categorize,
             copy_article,
             review_again,
-            save,
+            enqueue_url,
+            archive_queue,
+            retry_archive,
             read,
             style,
             image,

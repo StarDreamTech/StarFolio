@@ -13,6 +13,7 @@ mod extract;
 mod network;
 mod local_media;
 pub mod translation;
+pub mod queue;
 pub use local_media::{import_local_image, restore_x_cover, LocalImage};
 use anyhow::{bail, ensure, Context, Result};
 #[cfg(feature = "app")]

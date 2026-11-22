@@ -4,7 +4,7 @@
 
 [中文](README.md)
 
-StarFolio is an open-source, local-first reader for archiving web pages. Paste a link or import a browser-saved page to preserve article text, visible comments, author/profile references, and images, then reread everything with a shared site-specific stylesheet. Captures stay in your private local data directory, not in the organization repository.
+StarFolio is an open-source, local-first reader for archiving web pages. Queue a link for a configured local Agent to verify and archive, or import a browser-saved file yourself. Preserve article text, visible comments, author/profile references, and images, then reread them with a shared site-specific stylesheet. Captures stay in your private local data directory, not in the organization repository.
 
 ## Features
 
@@ -15,6 +15,10 @@ StarFolio is an open-source, local-first reader for archiving web pages. Paste a
 - Editable per-site CSS, stored locally and shared across captures from that site.
 - For pages you can read normally in your browser, export a `starfolio.discourse-dom.v1` JSON file for import. Respect site rules; this app does not bypass sign-in, CAPTCHA, or paywalls.
 - CLI: `cargo run --manifest-path src-tauri/Cargo.toml --bin folio -- save <url>`, `list`, and `verify <id>`.
+
+## Link queue
+
+The link form saves a local request without opening the page or extracting it. A separate Agent must process the queue and verify the offline archive. Without an Agent, requests stay pending. Blocked requests show a reason and can be retried. Manual browser-file import remains available. See the [local Agent interface](docs/archive-queue.md).
 
 ## Development
 
@@ -33,7 +37,7 @@ The first Rust build downloads crates. See [Tauri prerequisites](https://v2.taur
 
 - Public source contains the app, not captured content. Downloads go under the current user's app data directory at `tech.stardream.starfolio/library/`, with mode 0700 on Unix and inherited user-profile permissions on Windows. Never commit that directory, browser exports, or real posts.
 - This is not an encrypted vault. Protect your OS account, disk, sync provider, and backups.
-- Automatic fetches use standard HTTP(S) ports and public addresses only, reject private-network redirects and HTTPS downgrades, and ignore system proxies. Limits: 3,000 posts, 12 MiB per image, and 200 MiB total images per capture. If challenged, import publicly visible content from your browser; verification is not bypassed.
+- Explicit CLI fetches (`folio save`) use standard HTTP(S) ports and public addresses only, reject private-network redirects and HTTPS downgrades, and ignore system proxies. Limits: 3,000 posts, 12 MiB per image, and 200 MiB total images per capture. If challenged, import publicly visible content from your browser; verification is not bypassed.
 - Websites change; posts may be missing, hot-linked media may fail, and copying may be restricted. A generic extractor cannot understand every site's layout. Missing items are reported.
 - Removing ads from a capture does not alter the original site or linked pages.
 
