@@ -12,6 +12,7 @@ mod discussion;
 mod extract;
 mod network;
 mod local_media;
+pub mod translation;
 pub use local_media::{import_local_image, restore_x_cover, LocalImage};
 use anyhow::{bail, ensure, Context, Result};
 #[cfg(feature = "app")]
@@ -91,6 +92,8 @@ pub struct Summary {
     pub site: String,
     pub url: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chinese_title: Option<String>,
     pub saved: String,
     pub kind: String,
     pub posts: usize,
@@ -428,6 +431,7 @@ fn make(
     let summary = Summary {
         id: id.clone(),
         title,
+        chinese_title: None,
         author: shelf_author(&site, kind, &entries),
         site,
         url: u.into(),
@@ -518,6 +522,7 @@ pub fn list(root: &Path) -> Result<Vec<Summary>> {
                     s.category = override_name;
                 }
             }
+            s.chinese_title = translation::chinese_title(&dir);
             r.push(s);
         }
     }
@@ -528,7 +533,7 @@ fn reader_time(raw: &str) -> String {
     let raw = esc(raw);
     format!("<time data-archive-time datetime=\"{raw}\">{raw}</time>")
 }
-fn article(c: &Capture, app_times: bool) -> String {
+fn article(c: &Capture, app_times: bool, translated: bool) -> String {
     let s = &c.summary;
     let saved = if app_times {
         format!("归档于 {}", reader_time(&s.saved))
@@ -541,7 +546,8 @@ fn article(c: &Capture, app_times: bool) -> String {
         format!("<a href=\"{}\">原文</a> · ", esc(&s.url))
     };
     let count = if s.kind == local_media::LOCAL_IMAGE { "图片收藏".into() } else { format!("{} 条正文与评论", s.posts) };
-    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p>{source}{count} · {saved}</p></header>",esc(&s.site),esc(&s.title));
+    let label = if translated { "<p>中文译文 · 评论保留原文</p>" } else { "" };
+    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p>{source}{count} · {saved}</p>{label}</header>",esc(&s.site),esc(&s.title));
     if s.missing_posts + s.missing_images > 0 {
         h += &format!(
             "<p class=\"missing\">未取到 {} 个楼层、{} 个图片来源。详见本地清单。</p>",
@@ -580,9 +586,8 @@ fn article(c: &Capture, app_times: bool) -> String {
     h
 }
 fn standalone(c: &Capture) -> String {
-    format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'self' file:; img-src 'self' file:; form-action 'none'; base-uri 'none'\"><title>{}</title><link rel=\"stylesheet\" href=\"../../styles-private/reader.css\"><link rel=\"stylesheet\" href=\"../../styles-private/{}\"><main>{}</main></html>",esc(&c.summary.title),site_css(&c.summary.site),article(c, false))
+    format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'self' file:; img-src 'self' file:; form-action 'none'; base-uri 'none'\"><title>{}</title><link rel=\"stylesheet\" href=\"../../styles-private/reader.css\"><link rel=\"stylesheet\" href=\"../../styles-private/{}\"><main>{}</main></html>",esc(&c.summary.title),site_css(&c.summary.site),article(c, false, false))
 }
-#[cfg(any(feature = "app", test))]
 pub(crate) fn snapshot(root: &Path, id: &str) -> Result<Capture> {
     Ok(serde_json::from_slice(&fs::read(
         folder(root, id)?.join("manifest.json"),
@@ -624,6 +629,7 @@ pub fn verify(root: &Path, id: &str) -> Result<usize> {
     if fs::read_to_string(dir.join("index.html"))? != standalone(&c) {
         bail!("阅读页与清单不一致")
     }
+    translation::verify_file(&dir, &c)?;
     Ok(c.entries.len())
 }
 
@@ -800,7 +806,7 @@ mod tests {
         });
         let s = import(d.path(), sample().as_str(), &data.to_string()).unwrap();
         let c = snapshot(d.path(), &s.id).unwrap();
-        let html = article(&c, true);
+        let html = article(&c, true, false);
         assert_eq!(html.matches("data-archive-time").count(), 3);
         assert!(html.contains(&format!(
             "归档于 <time data-archive-time datetime=\"{}\"",

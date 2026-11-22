@@ -334,12 +334,12 @@ mod tests {
             );
             assert_eq!(verify(&r, id).unwrap(), 4);
             assert_eq!(
-                article(&c, false)
+                article(&c, false, false)
                     .matches("class=\"author-avatar\"")
                     .count(),
                 2
             );
-            let clip = crate::copy::prepare(&r, id, true).unwrap();
+            let clip = crate::copy::prepare(&r, id, true, false).unwrap();
             assert_eq!(clip.images, 0);
             assert!(!clip.html.contains(&name));
             for f in ["manifest.json", "index.html"] {

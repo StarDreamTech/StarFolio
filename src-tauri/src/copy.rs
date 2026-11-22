@@ -171,9 +171,10 @@ impl Clip {
     }
 }
 
-pub(crate) fn prepare(root: &Path, id: &str, replies: bool) -> Result<Clip> {
+pub(crate) fn prepare(root: &Path, id: &str, replies: bool, prefer_chinese: bool) -> Result<Clip> {
     let dir = folder(root, id)?;
-    let c = snapshot(root, id)?;
+    let mut c = snapshot(root, id)?;
+    if prefer_chinese { translation::localize(&dir, &mut c); }
     let u = Url::parse(&c.summary.url)?;
     let mut clip = Clip::default();
     clip.html.push_str("<h1>");
@@ -227,7 +228,7 @@ mod tests {
     #[test]
     fn order_scope_and_embedded_bytes() {
         let (root, id, _) = fixture();
-        let clip = prepare(root.path(), &id, false).unwrap();
+        let clip = prepare(root.path(), &id, false, false).unwrap();
         assert_eq!((clip.images, clip.missing), (1, 1));
         let img = format!("data:image/png;base64,{}", STANDARD.encode(PNG));
         assert!(
@@ -245,7 +246,7 @@ mod tests {
             clip.text.contains("第一段\n[插图]\n第二段")
                 && clip.text.contains("[图片未保存：未下载]")
         );
-        let full = prepare(root.path(), &id, true).unwrap();
+        let full = prepare(root.path(), &id, true, false).unwrap();
         assert_eq!(full.images, 2);
         assert!(full.text.contains("#2 · 测试读者\n回复示例"));
     }
@@ -255,9 +256,9 @@ mod tests {
         let dir = folder(root.path(), &id).unwrap();
         fs::write(dir.join("images").join(&name), [PNG, &[0]].concat()).unwrap();
         assert!(image_bytes(&dir, "../manifest.json").is_err());
-        assert!(prepare(root.path(), "../", true).is_err());
+        assert!(prepare(root.path(), "../", true, false).is_err());
         assert!(Clip::default().check_size(LIMIT + 1).is_err());
-        let clip = prepare(root.path(), &id, false).unwrap();
+        let clip = prepare(root.path(), &id, false, false).unwrap();
         assert_eq!((clip.images, clip.missing), (0, 2));
         assert!(clip.text.contains("[图片未保存：插图]"));
     }
@@ -265,7 +266,7 @@ mod tests {
     #[test]
     fn appkit_pastes_inline_image_and_text() {
         let (root, id, _) = fixture();
-        let clip = prepare(root.path(), &id, false).unwrap();
+        let clip = prepare(root.path(), &id, false, false).unwrap();
         let path = root.path().join("clip.json");
         fs::write(&path, serde_json::to_vec(&clip).unwrap()).unwrap();
         let check = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/paste-macos.swift");
