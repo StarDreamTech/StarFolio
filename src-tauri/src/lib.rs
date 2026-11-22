@@ -112,6 +112,15 @@ pub struct Summary {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub image_text: String,
 }
+impl Summary {
+    fn display_title<'a>(&self, title: &'a str) -> std::borrow::Cow<'a, str> {
+        if self.kind == collection::X_DISCUSSION {
+            collection::x_post_title(title)
+        } else {
+            title.into()
+        }
+    }
+}
 #[derive(Serialize, Deserialize)]
 pub struct Asset {
     pub url: String,
@@ -345,7 +354,7 @@ fn make(
             let v: serde_json::Value = serde_json::from_str(data)?;
             if v["source"] == "x" {
                 let (t, e) = collection::x_post(&v, &u, &mut grab)?;
-                (if v["format"] == "article" { "X · 长文" } else { "X · 可见讨论" }, t, e, vec![], None)
+                (if v["format"] == "article" { "X · 长文" } else { collection::X_DISCUSSION }, t, e, vec![], None)
             } else if v["format"] == "starfolio.v2ex.v1" {
                 let (t, e, m) = collection::v2ex(&v, &u, &mut grab)?;
                 unknown_missing = m;
@@ -523,7 +532,9 @@ pub fn list(root: &Path) -> Result<Vec<Summary>> {
                     s.category = override_name;
                 }
             }
-            s.chinese_title = translation::chinese_title(&dir);
+            s.title = s.display_title(&s.title).into_owned();
+            s.chinese_title = translation::chinese_title(&dir)
+                .map(|title| s.display_title(&title).into_owned());
             r.push(s);
         }
     }
@@ -548,7 +559,13 @@ fn article(c: &Capture, app_times: bool, translated: bool) -> String {
     };
     let count = if s.kind == local_media::LOCAL_IMAGE { "图片收藏".into() } else { format!("{} 条正文与评论", s.posts) };
     let label = if translated { "<p>中文译文 · 评论保留原文</p>" } else { "" };
-    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p>{source}{count} · {saved}</p>{label}</header>",esc(&s.site),esc(&s.title));
+    // Standalone HTML is verified byte-for-byte; apply the display limit to old archives in the app only.
+    let title = if app_times {
+        s.display_title(&s.title)
+    } else {
+        s.title.as_str().into()
+    };
+    let mut h=format!("<header><p class=\"eyebrow\">星藏 / {}</p><h1>{}</h1><p>{source}{count} · {saved}</p>{label}</header>",esc(&s.site),esc(&title));
     if s.missing_posts + s.missing_images > 0 {
         h += &format!(
             "<p class=\"missing\">未取到 {} 个楼层、{} 个图片来源。详见本地清单。</p>",

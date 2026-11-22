@@ -178,7 +178,7 @@ pub(crate) fn prepare(root: &Path, id: &str, replies: bool, prefer_chinese: bool
     let u = Url::parse(&c.summary.url)?;
     let mut clip = Clip::default();
     clip.html.push_str("<h1>");
-    clip.words(&c.summary.title);
+    clip.words(&c.summary.display_title(&c.summary.title));
     clip.html.push_str("</h1>");
     clip.newline();
     let main = c

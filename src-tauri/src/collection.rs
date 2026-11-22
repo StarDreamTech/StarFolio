@@ -1,6 +1,26 @@
 //! An explicit offline import. A collection cannot read files outside itself or trigger network requests.
 use crate::*;
 use serde_json::Value;
+use std::borrow::Cow;
+use unicode_segmentation::UnicodeSegmentation;
+
+pub(crate) const X_DISCUSSION: &str = "X · 可见讨论";
+
+pub(crate) fn x_post_title(text: &str) -> Cow<'_, str> {
+    const LIMIT: usize = 30;
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .unwrap_or("X 帖子");
+    if line.graphemes(true).nth(LIMIT).is_some() {
+        let (end, _) = line.grapheme_indices(true).nth(LIMIT - 1).unwrap();
+        format!("{}…", line[..end].trim_end()).into()
+    } else {
+        line.into()
+    }
+}
+
 #[derive(Deserialize)]
 struct Catalog {
     format: String,
@@ -312,21 +332,12 @@ pub(crate) fn x_post(
             ..Default::default()
         });
     }
-    let heading = text(
-        v,
-        if v["format"] == "article" && !text(v, "title").is_empty() {
-            "title"
-        } else {
-            "text"
-        },
-    );
-    let title = heading
-        .lines()
-        .find(|x| !x.trim().is_empty())
-        .unwrap_or("X 帖子")
-        .chars()
-        .take(80)
-        .collect();
+    let heading = text(v, "title").trim();
+    let title = if v["format"] == "article" && !heading.is_empty() {
+        heading.to_owned()
+    } else {
+        x_post_title(text(v, "text")).into_owned()
+    };
     Ok((title, entries))
 }
 pub(crate) fn v2ex(
@@ -441,6 +452,63 @@ pub(crate) fn blog(
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn regular_x_titles_shorten_without_changing_the_body_or_legacy_files() {
+        let lib = tempfile::tempdir().unwrap();
+        let root = lib.path();
+        let url = "https://x.com/test/status/123";
+        let emoji = "👩🏽‍💻";
+        let line = format!("{}{}不能丢失的正文", "长".repeat(28), emoji);
+        let short = format!("{}{}…", "长".repeat(28), emoji);
+        assert_eq!(x_post_title("\n   简短首行  \n下一段"), "简短首行");
+        assert_eq!(x_post_title(" \n"), "X 帖子");
+        assert_eq!(x_post_title(&"界".repeat(30)), "界".repeat(30));
+
+        let mut record = json!({"source":"x","schemaVersion":3,"id":"123","url":url,
+            "author":{"handle":"test"},"text":format!("{line}\n另一段正文"),"comments":[]});
+        let summary = import(root, url, &record.to_string()).unwrap();
+        assert_eq!(summary.title, short);
+        let dir = folder(root, &summary.id).unwrap();
+        let mut saved = snapshot(root, &summary.id).unwrap();
+        assert!(saved.entries[0].html.contains(&line));
+        assert!(saved.entries[0].html.contains("另一段正文"));
+        assert!(standalone(&saved).contains(&format!("<h1>{short}</h1>")));
+
+        // Simulate a snapshot saved before title shortening.
+        saved.summary.title = line.clone();
+        fs::write(dir.join("summary.json"), serde_json::to_vec(&saved.summary).unwrap()).unwrap();
+        fs::write(dir.join("manifest.json"), serde_json::to_vec(&saved).unwrap()).unwrap();
+        let offline = standalone(&saved);
+        fs::write(dir.join("index.html"), &offline).unwrap();
+        let zh_title = "译".repeat(40);
+        let mut zh = serde_json::to_value(translation::source(root, &summary.id).unwrap()).unwrap();
+        zh["title"] = json!(zh_title);
+        let zh_file = root.join("test-translation.json");
+        fs::write(&zh_file, zh.to_string()).unwrap();
+        translation::add_chinese(root, &summary.id, &zh_file).unwrap();
+        let shelf = list(root).unwrap().pop().unwrap();
+        assert_eq!(shelf.title, short);
+        assert_eq!(
+            shelf.chinese_title.as_deref(),
+            Some(x_post_title(&zh_title).as_ref())
+        );
+        let copied = copy::prepare(root, &summary.id, false, false).unwrap();
+        assert!(copied.text.starts_with(&short));
+        assert!(copied.text.contains(&line));
+        assert!(article(&saved, true, false).contains(&format!("<h1>{short}</h1>")));
+        assert!(translation::localize(&dir, &mut saved));
+        assert!(article(&saved, true, true)
+            .contains(&format!("<h1>{}</h1>", x_post_title(&zh_title))));
+        assert_eq!(verify(root, &summary.id).unwrap(), 1);
+        assert_eq!(fs::read_to_string(dir.join("index.html")).unwrap(), offline);
+
+        record["format"] = json!("article");
+        record["title"] = json!("完整长文标题".repeat(20));
+        record["articleHtml"] = json!("<p>文章正文</p>");
+        let (title, _) = x_post(&record, &Url::parse(url).unwrap(), &mut |_| None).unwrap();
+        assert_eq!(title, text(&record, "title"));
+    }
+
     #[test]
     fn offline_collection_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();

@@ -4032,6 +4032,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-updater",
  "tempfile",
+ "unicode-segmentation",
  "ureq",
  "url",
 ]
