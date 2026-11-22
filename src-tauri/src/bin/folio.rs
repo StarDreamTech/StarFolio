@@ -10,7 +10,19 @@ fn main() -> Result<()> {
         .map(std::path::PathBuf::from)
         .map(Ok)
         .unwrap_or_else(default_root)?;
+    use starfolio_lib::queue;
     match a.as_slice() {
+        [cmd, url] if cmd == "enqueue" => {
+            println!("{}", serde_json::to_string_pretty(&queue::enqueue(&root, url)?)?);
+            return Ok(());
+        }
+        [cmd] if cmd == "queue" => {
+            println!("{}", serde_json::to_string_pretty(&queue::list_jobs(&root)?)?);
+            return Ok(());
+        }
+        [cmd, id, snapshot] if cmd == "queue-done" => return queue::complete(&root, id, snapshot),
+        [cmd, id, reason] if cmd == "queue-block" => return queue::block(&root, id, reason),
+        [cmd, id] if cmd == "queue-retry" => return queue::retry(&root, id),
         [cmd, id] if cmd == "translation-source" => {
             println!("{}", serde_json::to_string_pretty(&starfolio_lib::translation::source(&root, id)?)?);
             return Ok(());
@@ -41,6 +53,6 @@ fn main() -> Result<()> {
         }
         _ => {}
     }
-    match a.as_slice(){[cmd,dir] if cmd=="import-avatars"=>{let(users,articles)=starfolio_lib::avatars::import(&root,std::path::Path::new(dir))?;println!("{users} author mappings saved; {articles} reader pages updated");},[cmd,dir] if cmd=="import-collection"=>println!("{} records imported or already present",import_collection(&root,std::path::Path::new(dir))?),[cmd,id] if cmd=="review"=>println!("{}",serde_json::to_string_pretty(&recheck(&root,id)?)?),[cmd,url,file] if cmd=="import"=>{let md=std::fs::metadata(file)?;anyhow::ensure!(md.len()<=16<<20,"file too large");let s=import(&root,url,&std::fs::read_to_string(file)?)?;println!("{}",serde_json::to_string_pretty(&s)?);},[cmd,url] if cmd=="save"=>{let s=capture(&root,url)?;println!("{}",serde_json::to_string_pretty(&s)?);println!("{}",root.join("snapshots").join(s.id).join("index.html").display());},[cmd] if cmd=="list"=>println!("{}",serde_json::to_string_pretty(&list(&root)?)?),[cmd,id] if cmd=="verify"=>println!("verified {} entries and image hashes",verify(&root,id)?),_=>bail!("folio translation-source <snapshot-id> | add-chinese <snapshot-id> <translation-json> | import-image <local-image> <metadata-json> | restore-x-cover <snapshot-id> <browser-cover-url> <local-image> | import-avatars <avatar-store> | import-collection <folder> | save <url> | import <source-url> <html-or-json-file> | list | review <snapshot-id> | verify <snapshot-id>")}
+    match a.as_slice(){[cmd,dir] if cmd=="import-avatars"=>{let(users,articles)=starfolio_lib::avatars::import(&root,std::path::Path::new(dir))?;println!("{users} author mappings saved; {articles} reader pages updated");},[cmd,dir] if cmd=="import-collection"=>println!("{} records imported or already present",import_collection(&root,std::path::Path::new(dir))?),[cmd,id] if cmd=="review"=>println!("{}",serde_json::to_string_pretty(&recheck(&root,id)?)?),[cmd,url,file] if cmd=="import"=>{let md=std::fs::metadata(file)?;anyhow::ensure!(md.len()<=16<<20,"file too large");let s=import(&root,url,&std::fs::read_to_string(file)?)?;println!("{}",serde_json::to_string_pretty(&s)?);},[cmd,url] if cmd=="save"=>{let s=capture(&root,url)?;println!("{}",serde_json::to_string_pretty(&s)?);println!("{}",root.join("snapshots").join(s.id).join("index.html").display());},[cmd] if cmd=="list"=>println!("{}",serde_json::to_string_pretty(&list(&root)?)?),[cmd,id] if cmd=="verify"=>println!("verified {} entries and image hashes",verify(&root,id)?),_=>bail!("folio enqueue <url> | queue | queue-done <job-id> <snapshot-id> | queue-block <job-id> <reason> | queue-retry <job-id> | translation-source <snapshot-id> | add-chinese <snapshot-id> <translation-json> | import-image <local-image> <metadata-json> | restore-x-cover <snapshot-id> <browser-cover-url> <local-image> | import-avatars <avatar-store> | import-collection <folder> | save <url> | import <source-url> <html-or-json-file> | list | review <snapshot-id> | verify <snapshot-id>")}
     Ok(())
 }

@@ -9,3 +9,5 @@
 #pager{display:flex;align-items:center;justify-content:center;gap:.7rem;margin:1rem 0;font-size:.88rem}#pager button:disabled{cursor:default}
 
 .header-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:.35rem}.header-actions button{white-space:nowrap;font-size:.83rem;padding:.4rem .6rem}#githubBtn svg{display:block}@media(max-width:480px){header .local{display:none}}
+
+#queueIntro{font-size:.83rem;margin:.65rem 0 0}#queuePanel ul{list-style:none;padding:0;margin:.45rem 0}#queuePanel li{display:flex;align-items:center;justify-content:space-between;gap:.6rem;overflow-wrap:anywhere;padding:.55rem 0;border-bottom:1px solid var(--edge)}#queuePanel button{font-size:.8rem;padding:.3rem .55rem;white-space:nowrap}#refreshQueue{margin-top:.65rem}
