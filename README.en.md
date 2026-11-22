@@ -71,6 +71,8 @@ The shelf shows 20 entries per page, with page controls below the list. Changing
 
 Open **阅读语言** (Reading language) from the shelf or reader. Follow the system, prefer Simplified Chinese, or prefer the source. If a translation is unavailable, StarFolio shows the original. English archives can receive a separate offline Chinese translation without replacing the source. See [bilingual archive design](docs/reading-language.md).
 
+Ordinary X posts use the first nonempty line as a short title, limited to 30 characters including the ellipsis. The shelf and in-app reader shorten older display titles without changing the body, saved translations, or existing standalone HTML. X Articles keep their original titles.
+
 Open **显示时区** (Display timezone) from the shelf or reader. It defaults to the system timezone and can be set to Beijing time, UTC, or another supported timezone. Capture and publication times are labeled separately. Times without a source timezone stay as saved. This only changes the app display; raw timestamps and standalone HTML are unchanged.
 
 
