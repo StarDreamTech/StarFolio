@@ -95,6 +95,7 @@ pub fn import_local_image(root: &Path, path: &Path, meta: LocalImage) -> Result<
         .and_then(Url::host_str)
         .unwrap_or(LOCAL_IMAGE);
     let summary = Summary {
+        chinese_title: None,
         id,
         site: site.into(),
         url: source.map(|u| u.to_string()).unwrap_or_default(),

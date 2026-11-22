@@ -65,6 +65,8 @@ Combine category, domain, author, AI tag and text filters; **Untagged** includes
 
 The shelf shows 20 entries per page, with page controls below the list. Changing a filter returns to page one; returning from the reader keeps the current page. Author counts cover all matching entries, not just the displayed page. See [pagination verification](docs/shelf-pagination.md).
 
+Open **阅读语言** (Reading language) from the shelf or reader. Follow the system, prefer Simplified Chinese, or prefer the source. If a translation is unavailable, StarFolio shows the original. English archives can receive a separate offline Chinese translation without replacing the source. See [bilingual archive design](docs/reading-language.md).
+
 Open **显示时区** (Display timezone) from the shelf or reader. It defaults to the system timezone and can be set to Beijing time, UTC, or another supported timezone. Capture and publication times are labeled separately. Times without a source timezone stay as saved. This only changes the app display; raw timestamps and standalone HTML are unchanged.
 
 

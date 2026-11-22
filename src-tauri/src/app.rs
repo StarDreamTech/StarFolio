@@ -52,21 +52,24 @@ struct View {
     css: String,
     site_css: String,
     source_url: String,
+    translated: bool,
     audit: ai::Audit,
 }
 #[tauri::command]
-async fn read(h: AppHandle, id: String) -> Result<View, String> {
+async fn read(h: AppHandle, id: String, prefer_chinese: bool) -> Result<View, String> {
     let r = root(&h).map_err(msg)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let c = snapshot(&r, &id)?;
+        let mut c = snapshot(&r, &id)?;
+        let translated = prefer_chinese && translation::localize(&folder(&r, &id)?, &mut c);
         let css = fs::read_to_string(r.join("styles-private").join(site_css(&c.summary.site)))?;
         Ok(View {
-            html: article(&c, true)
+            html: article(&c, true, translated)
                 .replace(" src=\"images/", " data-local=\"")
                 .replace(" src=\"../../avatars/objects/", " data-avatar=\""),
             css: BASE_CSS.into(),
             site_css: css,
             source_url: c.summary.url,
+            translated,
             audit: c.audit,
         })
     })
@@ -116,13 +119,14 @@ async fn copy_article(
     window: tauri::WebviewWindow,
     id: String,
     replies: bool,
+    prefer_chinese: bool,
 ) -> Result<(usize, usize), String> {
     if window.label() != "main" {
         return Err("只能从阅读页复制".into());
     }
     let root = root(&h).map_err(msg)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let clip = copy::prepare(&root, &id, replies)?;
+        let clip = copy::prepare(&root, &id, replies, prefer_chinese)?;
         let counts = (clip.images, clip.missing);
         clipboard::write(&window, clip)?;
         Ok(counts)
